@@ -14,10 +14,16 @@ struct TemplateVariable: Identifiable, Hashable {
 }
 
 enum TemplateEngine {
-    // Group 1: variable name ([A-Za-z_][A-Za-z0-9_]*), Group 2: optional default value after "="
-    private static let pattern = try! NSRegularExpression(
-        pattern: #"\{\{([A-Za-z_][A-Za-z0-9_]*)(?:=([^}]*))?\}\}"#
-    )
+    private static let pattern: NSRegularExpression = {
+        do {
+            return try NSRegularExpression(
+                pattern: #"\{\{([A-Za-z_][A-Za-z0-9_]*)(?:=([^}]*))?\}\}"#
+            )
+        } catch {
+            assertionFailure("TemplateEngine regex failed to compile: \(error)")
+            return NSRegularExpression()
+        }
+    }()
 
     static func extractVariables(from text: String) -> [TemplateVariable] {
         let range = NSRange(text.startIndex..., in: text)

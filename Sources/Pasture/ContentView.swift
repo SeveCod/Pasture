@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var pendingFeedTargets: [MDFile] = []
     @State private var feedButtonHover = false
     @State private var searchText = ""
+    @State private var clipboardClearTrigger: Int = 0
 
     var body: some View {
         NavigationSplitView {
@@ -73,6 +74,15 @@ struct ContentView: View {
             if !value.isEmpty {
                 fm.searchQuery = value
             }
+        }
+        .task(id: clipboardClearTrigger) {
+            guard clipboardClearTrigger > 0 else { return }
+            let savedChangeCount = NSPasteboard.general.changeCount
+            try? await Task.sleep(for: .seconds(60))
+            guard !Task.isCancelled,
+                  NSPasteboard.general.changeCount == savedChangeCount else { return }
+            NSPasteboard.general.clearContents()
+            withAnimation { feedbackMessage = "Clipboard cleared" }
         }
     }
 
@@ -432,6 +442,7 @@ struct ContentView: View {
     func copyToClipboard(_ text: String, message: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        clipboardClearTrigger += 1
         withAnimation { feedbackMessage = message }
     }
 

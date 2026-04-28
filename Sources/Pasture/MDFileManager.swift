@@ -41,6 +41,10 @@ final class MDFileManager: ObservableObject {
     @Published var searchQuery: String = ""
     @Published var lastError: String?
 
+    nonisolated(unsafe) private var directorySource: (any DispatchSourceFileSystemObject)?
+    nonisolated(unsafe) private var watchedFileDescriptor: Int32 = -1
+    nonisolated(unsafe) private var reloadWorkItem: DispatchWorkItem?
+
     static let pastureDir: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent(".pasture")
@@ -61,6 +65,53 @@ final class MDFileManager: ObservableObject {
             try? fm.createDirectory(at: Self.pastureDir, withIntermediateDirectories: true)
         }
         loadFiles()
+        startWatching()
+    }
+
+    deinit {
+        reloadWorkItem?.cancel()
+        directorySource?.cancel()
+    }
+
+    private func startWatching() {
+        let fd = open(Self.pastureDir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        watchedFileDescriptor = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: .write,
+            queue: .global(qos: .utility)
+        )
+        source.setEventHandler { [weak self] in
+            self?.scheduleReload()
+        }
+        source.setCancelHandler {
+            close(fd)
+        }
+        source.resume()
+        directorySource = source
+    }
+
+    func stopWatching() {
+        reloadWorkItem?.cancel()
+        reloadWorkItem = nil
+        directorySource?.cancel()
+        directorySource = nil
+        watchedFileDescriptor = -1
+    }
+
+    private nonisolated func scheduleReload() {
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.loadFiles()
+            }
+        }
+        Task { @MainActor [weak self] in
+            self?.reloadWorkItem?.cancel()
+            self?.reloadWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+        }
     }
 
     func loadFiles() {
@@ -180,14 +231,27 @@ final class MDFileManager: ObservableObject {
             renderedContents?[file.url] ?? file.content
         }
         if toFeed.count == 1, let f = toFeed.first {
-            return "<context name=\"\(f.name).md\">\n\(content(for: f))\n</context>"
+            let safeName = "\(f.name).md".xmlEscapedAttribute
+            return "<context name=\"\(safeName)\">\n\(content(for: f))\n</context>"
         }
-        let inner = toFeed.map { "<context name=\"\($0.name).md\">\n\(content(for: $0))\n</context>" }
-            .joined(separator: "\n")
+        let inner = toFeed.map {
+            let safeName = "\($0.name).md".xmlEscapedAttribute
+            return "<context name=\"\(safeName)\">\n\(content(for: $0))\n</context>"
+        }
+        .joined(separator: "\n")
         return "<documents>\n\(inner)\n</documents>"
     }
 
     func totalTokens(for files: [MDFile]) -> Int {
         files.reduce(0) { $0 + $1.tokens }
+    }
+}
+
+extension String {
+    var xmlEscapedAttribute: String {
+        replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
     }
 }
