@@ -113,3 +113,9 @@ Sources/Pasture/
 ```
 
 No CoreData, no SwiftData, no external dependencies.
+
+## Release
+
+**Current version: 1.0.0** (2026-04-29)
+
+See [CHANGELOG.md](CHANGELOG.md) for the full history of changes.
