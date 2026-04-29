@@ -13,10 +13,10 @@ struct EditorView: View {
             .padding(PastureLayout.editorPadding)
             .scrollContentBackground(.hidden)
             .onChange(of: file.content) { _, _ in
-                file.updateDerivedProperties()
                 saveSubject.send()
             }
             .onReceive(saveSubject.debounce(for: .seconds(1), scheduler: RunLoop.main)) { _ in
+                file.updateDerivedProperties()
                 onSave()
             }
     }

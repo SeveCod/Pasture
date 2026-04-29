@@ -7,6 +7,38 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-29
+
+### Added
+
+- Sort toggle in sidebar: sort files by date (default) or by name.
+- Drag & drop export: drag files from Pasture sidebar to attach in AI chats via `Transferable` protocol.
+- Collections: organize files in subdirectories inside `~/.pasture/`. Context menus for moving files between collections, creating and deleting collections.
+- PastureKit module: extracted `TemplateEngine`, `TokenEstimator`, `FilenameSanitizer`, and `xmlEscapedAttribute` into a testable library target.
+- 65 unit tests covering all PastureKit public API (Swift Testing framework).
+
+### Changed
+
+- ContentView refactored from ~700 lines to ~310 lines. Sidebar extracted to `SidebarView`, feed button/template sheet to `FeedAction.swift`.
+- Editor derived properties (token count, template detection) now update on save debounce instead of every keystroke.
+- Collections cached in `@Published var collections` instead of hitting filesystem on each render.
+- Feed button hover state moved to internal `@State` (was unnecessarily exposed as binding).
+- Path traversal checks consolidated into single `isInsidePasture()` helper (was repeated 8x inline).
+- File listing uses `mdFiles(in:)` and `realSubdirectories(in:)` helpers (eliminates duplicated filtering).
+
+### Fixed
+
+- DispatchSource file watcher crash under Swift 6 strict concurrency — moved to module-level free function to avoid actor isolation propagation.
+- `isInsidePasture()` now uses trailing-slash boundary check to prevent `.pasture-evil/` prefix match.
+- CDATA injection: `]]>` sequences in file content are now escaped in feed output.
+- Removed unused `watchedFileDescriptor` field to reduce `nonisolated(unsafe)` surface.
+
+### Security
+
+- CDATA body content escaped against `]]>` injection before XML wrapping.
+- Path traversal check hardened with path component boundary (`base + "/"` instead of bare prefix).
+- Symlink filtering verified in both `mdFiles(in:)` and `realSubdirectories(in:)`.
+
 ## [1.0.0] - 2026-04-29
 
 ### Added
@@ -65,5 +97,6 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/SeveCod/Pasture/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/SeveCod/Pasture/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/SeveCod/Pasture/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/SeveCod/Pasture/releases/tag/v1.0.0

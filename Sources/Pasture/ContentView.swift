@@ -2,6 +2,25 @@ import SwiftUI
 import AppKit
 import Combine
 import UniformTypeIdentifiers
+import CoreTransferable
+import PastureKit
+
+enum FileSortOrder: String, CaseIterable {
+    case date = "Date"
+    case name = "Name"
+}
+
+struct FileTransfer: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .plainText) { transfer in
+            SentTransferredFile(transfer.url, allowAccessingOriginalFile: true)
+        } importing: { received in
+            FileTransfer(url: received.file)
+        }
+    }
+}
 
 struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -11,29 +30,40 @@ struct ContentView: View {
     @State private var showPasteSheet = false
     @State private var showMergeSheet = false
     @State private var showTemplateSheet = false
-    @State private var newFileName = ""
+    @State private var showNewCollectionSheet = false
+    @State private var showDeleteConfirmation = false
+    @State private var filePendingDeletion: MDFile?
     @State private var feedbackMessage: String?
     @State private var templateVariables: [TemplateVariable] = []
     @State private var pendingFeedTargets: [MDFile] = []
-    @State private var feedButtonHover = false
     @State private var searchText = ""
+    @State private var sortOrder: FileSortOrder = .date
     @State private var clipboardClearTrigger: Int = 0
 
     var body: some View {
         NavigationSplitView {
-            sidebar
-                .navigationSplitViewColumnWidth(
-                    min: PastureLayout.sidebarMinWidth,
-                    ideal: PastureLayout.sidebarIdealWidth,
-                    max: PastureLayout.sidebarMaxWidth
-                )
+            SidebarView(
+                fm: fm,
+                selectedFiles: $selectedFiles,
+                activeFile: $activeFile,
+                searchText: $searchText,
+                sortOrder: $sortOrder,
+                filePendingDeletion: $filePendingDeletion,
+                showDeleteConfirmation: $showDeleteConfirmation,
+                onDrop: handleDrop
+            )
+            .navigationSplitViewColumnWidth(
+                min: PastureLayout.sidebarMinWidth,
+                ideal: PastureLayout.sidebarIdealWidth,
+                max: PastureLayout.sidebarMaxWidth
+            )
         } detail: {
             editorPanel
         }
         .toolbar { toolbarContent }
         .onAppear { fm.setup() }
         .onReceive(NotificationCenter.default.publisher(for: .pasteFromClipboard)) { _ in
-            triggerPaste()
+            showPasteSheet = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .forceSave)) { _ in
             if let file = activeFile, let idx = fm.files.firstIndex(of: file) {
@@ -43,7 +73,7 @@ struct ContentView: View {
         .sheet(isPresented: $showPasteSheet) {
             NameInputSheet(title: "New file from clipboard", actionLabel: "Create") { name in
                 let content = NSPasteboard.general.string(forType: .string) ?? ""
-                if let created = fm.create(name: name, content: content) {
+                if let created = fm.create(name: name, content: content, collection: activeFile?.collection) {
                     selectFile(created)
                 }
             }
@@ -56,7 +86,29 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $showTemplateSheet) { templateSheet }
+        .sheet(isPresented: $showNewCollectionSheet) {
+            NameInputSheet(title: "New collection", actionLabel: "Create") { name in
+                if fm.createCollection(name: name) {
+                    withAnimation { feedbackMessage = "Collection '\(name)' created" }
+                }
+            }
+        }
+        .sheet(isPresented: $showTemplateSheet) {
+            TemplateSheet(
+                variables: $templateVariables,
+                totalTokens: fm.totalTokens(for: pendingFeedTargets),
+                onCancel: { showTemplateSheet = false },
+                onConfirm: confirmTemplateFeed
+            )
+        }
+        .alert("Delete file?",
+               isPresented: $showDeleteConfirmation,
+               presenting: filePendingDeletion) { file in
+            Button("Delete", role: .destructive) { deleteFile(file) }
+            Button("Cancel", role: .cancel) { filePendingDeletion = nil }
+        } message: { file in
+            Text("'\(file.name).md' will be permanently deleted.")
+        }
         .overlay(alignment: .bottom) { feedbackOverlay }
         .animation(.easeInOut(duration: PastureEffects.animationStandard), value: feedbackMessage)
         .onChange(of: fm.lastError) { _, error in
@@ -66,14 +118,13 @@ struct ContentView: View {
             }
         }
         .onChange(of: searchText) { _, newValue in
-            if newValue.isEmpty {
-                fm.searchQuery = newValue
-            }
+            if newValue.isEmpty { fm.searchQuery = newValue }
+        }
+        .onChange(of: fm.files) { _, newFiles in
+            reconcileSelection(with: newFiles)
         }
         .onReceive(Just(searchText).debounce(for: .milliseconds(300), scheduler: RunLoop.main)) { value in
-            if !value.isEmpty {
-                fm.searchQuery = value
-            }
+            if !value.isEmpty { fm.searchQuery = value }
         }
         .task(id: clipboardClearTrigger) {
             guard clipboardClearTrigger > 0 else { return }
@@ -86,91 +137,10 @@ struct ContentView: View {
         }
     }
 
-    // MARK: — Sidebar
-
-    var sidebar: some View {
-        VStack(spacing: 0) {
-            searchBar
-            Color.pastureDivider(colorScheme).frame(height: 1)
-            fileList
-            Color.pastureDivider(colorScheme).frame(height: 1)
-            selectionSummary
-        }
-        .background(Color.pastureSidebar(colorScheme))
-    }
-
-    var searchBar: some View {
-        HStack(spacing: PastureLayout.searchBarIconSpacing) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-                .font(.system(size: 13))
-            TextField("Search files…", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.pastureSearch)
-            if !searchText.isEmpty {
-                Button { searchText = "" ; fm.searchQuery = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity)
-            }
-        }
-        .padding(.horizontal, PastureLayout.searchBarHPadding)
-        .padding(.vertical, PastureLayout.searchBarVPadding)
-        .animation(.easeInOut(duration: PastureEffects.animationQuick), value: searchText.isEmpty)
-    }
-
-    var fileList: some View {
-        List(selection: $selectedFiles) {
-            ForEach(fm.filteredFiles) { file in
-                FileRow(file: file, colorScheme: colorScheme)
-                    .tag(file)
-                    .onTapGesture { activeFile = file }
-            }
-        }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        .onChange(of: selectedFiles) { oldVal, newVal in
-            if let previous = oldVal.first, oldVal.count == 1,
-               let idx = fm.files.firstIndex(of: previous) {
-                fm.save(file: fm.files[idx])
-            }
-            if newVal.count == 1 { activeFile = newVal.first }
-        }
-        .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in
-            handleDrop(providers: providers)
-        }
-    }
-
-    var selectionSummary: some View {
-        HStack {
-            let count = fm.filteredFiles.count
-            let totalTokens = fm.totalTokens(
-                for: selectedFiles.isEmpty ? fm.filteredFiles : Array(selectedFiles)
-            )
-            let label = selectedFiles.isEmpty ? "\(count) files" : "\(selectedFiles.count) selected"
-
-            Text(label)
-                .font(.pastureSummary)
-                .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-            Spacer()
-            HStack(spacing: 4) {
-                Image(systemName: "number")
-                    .font(.system(size: 9, weight: .semibold))
-                Text("~\(TokenEstimator.formatted(totalTokens)) tokens")
-                    .font(.pastureSummary)
-            }
-            .foregroundStyle(Color.pastureTokenBadge)
-        }
-        .padding(.horizontal, PastureLayout.summaryBarHPadding)
-        .padding(.vertical, PastureLayout.summaryBarVPadding)
-    }
-
     // MARK: — Editor
 
     @ViewBuilder
-    var editorPanel: some View {
+    private var editorPanel: some View {
         if let file = activeFile, let idx = fm.files.firstIndex(of: file) {
             VStack(spacing: 0) {
                 EditorView(file: $fm.files[idx], onSave: { fm.save(file: fm.files[idx]) })
@@ -183,7 +153,7 @@ struct ContentView: View {
         }
     }
 
-    func editorStatusBar(file: MDFile) -> some View {
+    private func editorStatusBar(file: MDFile) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "doc.text")
                 .font(.system(size: 10))
@@ -191,6 +161,18 @@ struct ContentView: View {
             Text(file.name + ".md")
                 .font(.pastureStatusBar)
                 .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+
+            if let collection = file.collection {
+                Text(collection)
+                    .font(.pastureStatusBar)
+                    .foregroundStyle(Color.pastureTokenBadge)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(
+                        Color.pastureTokenBadgeBg(colorScheme),
+                        in: RoundedRectangle(cornerRadius: PastureEffects.cornerRadiusSmall)
+                    )
+            }
 
             if file.hasTemplateVars {
                 TemplateBadge(compact: false, colorScheme: colorScheme)
@@ -207,7 +189,7 @@ struct ContentView: View {
         .background(Color.pastureStatusBar(colorScheme))
     }
 
-    var emptyState: some View {
+    private var emptyState: some View {
         VStack(spacing: PastureLayout.emptyStateSpacing) {
             Image(systemName: "leaf.fill")
                 .font(.system(size: PastureLayout.emptyStateIconSize))
@@ -239,7 +221,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    var feedbackOverlay: some View {
+    private var feedbackOverlay: some View {
         if let msg = feedbackMessage {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
@@ -266,12 +248,17 @@ struct ContentView: View {
     // MARK: — Toolbar
 
     @ToolbarContentBuilder
-    var toolbarContent: some ToolbarContent {
+    private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            Button { triggerPaste() } label: {
+            Button { showNewCollectionSheet = true } label: {
+                Label("New Collection", systemImage: "folder.badge.plus")
+            }
+            .help("Create a new collection")
+
+            Button { showPasteSheet = true } label: {
                 Label("Paste", systemImage: "doc.on.clipboard")
             }
-            .help("Create new .md from clipboard (⌘⇧V)")
+            .help("Create new .md from clipboard")
 
             Button { importPDFFromDisk() } label: {
                 Label("Import PDF", systemImage: "doc.richtext")
@@ -285,7 +272,11 @@ struct ContentView: View {
                 .help("Combine \(selectedFiles.count) files into one")
             }
 
-            feedButton
+            FeedButton(
+                targets: feedTargets,
+                totalTokens: fm.totalTokens(for: feedTargets),
+                action: feedClaude
+            )
 
             Button {
                 let previousURL = activeFile?.url
@@ -303,97 +294,9 @@ struct ContentView: View {
         }
     }
 
-    var feedButton: some View {
-        let targets = feedTargets
-        let tokens = fm.totalTokens(for: targets)
-        let isDisabled = targets.isEmpty
-
-        return Button { feedClaude() } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "leaf.fill")
-                    .rotationEffect(.degrees(15))
-                Text("Feed \(TokenEstimator.formatted(tokens))")
-                    .font(.pastureToolbarLabel)
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, PastureLayout.feedButtonHPadding)
-            .padding(.vertical, PastureLayout.feedButtonVPadding)
-            .background(
-                isDisabled
-                    ? AnyShapeStyle(Color.pastureTextTertiaryLight.opacity(0.3))
-                    : AnyShapeStyle(feedButtonHover ? LinearGradient.pastureFeedButtonHover : LinearGradient.pastureFeedButton)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: PastureLayout.feedButtonRadius))
-            .scaleEffect(feedButtonHover && !isDisabled ? 1.02 : 1.0)
-            .animation(.easeInOut(duration: PastureEffects.animationQuick), value: feedButtonHover)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in feedButtonHover = hovering }
-        .disabled(isDisabled)
-        .help("Copy wrapped in <context> tags for Claude")
-    }
-
-    // MARK: — Sheets
-
-    var templateSheet: some View {
-        VStack(spacing: PastureLayout.sheetSpacing) {
-            Text("Fill template variables")
-                .font(.pastureSheetHeading)
-            Text("These placeholders will be replaced before copying")
-                .font(.pastureSheetSubheading)
-                .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach($templateVariables) { $variable in
-                        HStack {
-                            Text("{{\(variable.name)}}")
-                                .font(.pastureTemplateVar)
-                                .foregroundStyle(Color.pastureTemplate)
-                                .frame(width: PastureLayout.templateVarLabelWidth, alignment: .trailing)
-                            TextField(
-                                variable.defaultValue.isEmpty ? "Value" : variable.defaultValue,
-                                text: $variable.value
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: PastureLayout.templateVarInputWidth)
-                        }
-                    }
-                }
-            }
-            .frame(maxHeight: 280)
-
-            Text("~\(TokenEstimator.formatted(fm.totalTokens(for: pendingFeedTargets))) tokens")
-                .font(.pastureTokenBadge)
-                .foregroundStyle(Color.pastureTokenBadge)
-
-            HStack(spacing: PastureLayout.sheetButtonSpacing) {
-                Button("Cancel") { showTemplateSheet = false }
-                    .keyboardShortcut(.cancelAction)
-
-                Button { confirmTemplateFeed() } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "leaf.fill")
-                            .font(.system(size: 11))
-                        Text("Feed")
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(LinearGradient.pastureFeedButton)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(PastureLayout.sheetPadding)
-        .frame(minWidth: PastureLayout.templateSheetMinWidth)
-    }
-
     // MARK: — Actions
 
-    var feedTargets: [MDFile] {
+    private var feedTargets: [MDFile] {
         if selectedFiles.count > 1 {
             return fm.files.filter { selectedFiles.contains($0) }
         } else if let f = activeFile {
@@ -402,17 +305,18 @@ struct ContentView: View {
         return []
     }
 
-    func selectFile(_ file: MDFile) {
+    private func selectFile(_ file: MDFile) {
         activeFile = file
         selectedFiles = [file]
     }
 
-    func triggerPaste() {
-        newFileName = ""
-        showPasteSheet = true
+    private func deleteFile(_ file: MDFile) {
+        if activeFile == file { activeFile = nil }
+        selectedFiles.remove(file)
+        fm.delete(files: [file])
     }
 
-    func feedClaude() {
+    private func feedClaude() {
         let targets = feedTargets
         guard !targets.isEmpty else { return }
 
@@ -430,7 +334,7 @@ struct ContentView: View {
                         message: "Copied \(targets.count == 1 ? targets[0].name : "\(targets.count) files") · ~\(TokenEstimator.formatted(fm.totalTokens(for: targets))) tokens")
     }
 
-    func confirmTemplateFeed() {
+    private func confirmTemplateFeed() {
         var rendered: [URL: String] = [:]
         for file in pendingFeedTargets {
             rendered[file.url] = TemplateEngine.render(file.content, with: templateVariables)
@@ -443,28 +347,28 @@ struct ContentView: View {
         templateVariables = []
     }
 
-    func copyToClipboard(_ text: String, message: String) {
+    private func copyToClipboard(_ text: String, message: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         clipboardClearTrigger += 1
         withAnimation { feedbackMessage = message }
     }
 
-    func importPDFFromDisk() {
+    private func importPDFFromDisk() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.pdf]
         panel.allowsMultipleSelection = true
         panel.message = "Select PDF files to import as Markdown"
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
-            if let created = fm.importPDF(from: url) {
+            if let created = fm.importPDF(from: url, collection: activeFile?.collection) {
                 selectFile(created)
                 withAnimation { feedbackMessage = "Imported \(created.name) from PDF" }
             }
         }
     }
 
-    func handleDrop(providers: [NSItemProvider]) -> Bool {
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
         let validExtensions: Set<String> = ["md", "pdf"]
         var hasValidProvider = false
         for provider in providers {
@@ -475,12 +379,29 @@ struct ContentView: View {
                       let url = URL(dataRepresentation: data, relativeTo: nil),
                       validExtensions.contains(url.pathExtension.lowercased()) else { return }
                 DispatchQueue.main.async {
-                    fm.importFile(from: url)
+                    fm.importFile(from: url, collection: activeFile?.collection)
                 }
             }
         }
         return hasValidProvider
     }
-}
 
-// MARK: — Extracted Views: EditorView.swift, FileRow.swift, NameInputSheet.swift, TemplateBadge.swift
+    // Reconcilia selección tras recarga: MDFile son structs que se recrean, por lo que
+    // la identidad por URL puede cambiar. Fallback por nombre solo como último recurso.
+    private func reconcileSelection(with newFiles: [MDFile]) {
+        if let active = activeFile {
+            if !newFiles.contains(active) {
+                activeFile = newFiles.first { $0.url == active.url }
+                    ?? newFiles.first { $0.name == active.name }
+            }
+        }
+        if !selectedFiles.isEmpty {
+            let reconciled = selectedFiles.compactMap { selected -> MDFile? in
+                if newFiles.contains(selected) { return selected }
+                return newFiles.first { $0.url == selected.url }
+                    ?? newFiles.first { $0.name == selected.name }
+            }
+            selectedFiles = Set(reconciled)
+        }
+    }
+}

@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="Pasture"
 BUNDLE_ID="com.sevecod.pasture"
-VERSION="1.0.0"
+VERSION="1.1.0"
 BUILD_DIR="$PROJECT_DIR/.build/release"
 OUTPUT_DIR="$PROJECT_DIR/dist"
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
@@ -19,6 +19,11 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+
+if [ -f "$PROJECT_DIR/AppIcon.icns" ]; then
+    cp "$PROJECT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+    echo "Icon copied."
+fi
 
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -45,6 +50,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
     <string>6.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>LSApplicationCategoryType</key>

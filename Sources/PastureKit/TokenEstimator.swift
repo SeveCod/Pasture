@@ -1,7 +1,7 @@
 import Foundation
 
-enum TokenEstimator {
-    static func estimate(_ text: String) -> Int {
+public enum TokenEstimator {
+    public static func estimate(_ text: String) -> Int {
         guard !text.isEmpty else { return 0 }
         var count = 0
         let scalars = text.unicodeScalars
@@ -27,7 +27,7 @@ enum TokenEstimator {
         return max(1, count)
     }
 
-    static func formatted(_ tokens: Int) -> String {
+    public static func formatted(_ tokens: Int) -> String {
         if tokens >= 1000 {
             let k = Double(tokens) / 1000.0
             return String(format: "%.1fk", k)
