@@ -74,6 +74,7 @@ final class MDFileManager: ObservableObject {
     }
 
     private func startWatching() {
+        guard directorySource == nil else { return }
         let fd = open(Self.pastureDir.path, O_EVTONLY)
         guard fd >= 0 else { return }
         watchedFileDescriptor = fd
@@ -133,6 +134,10 @@ final class MDFileManager: ObservableObject {
     }
 
     func save(file: MDFile) {
+        guard file.url.standardizedFileURL.path.hasPrefix(Self.pastureDir.standardizedFileURL.path) else {
+            lastError = "Cannot save outside .pasture directory"
+            return
+        }
         do {
             try file.content.write(to: file.url, atomically: true, encoding: .utf8)
         } catch {

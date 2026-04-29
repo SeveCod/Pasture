@@ -131,7 +131,11 @@ struct ContentView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .onChange(of: selectedFiles) { _, newVal in
+        .onChange(of: selectedFiles) { oldVal, newVal in
+            if let previous = oldVal.first, oldVal.count == 1,
+               let idx = fm.files.firstIndex(of: previous) {
+                fm.save(file: fm.files[idx])
+            }
             if newVal.count == 1 { activeFile = newVal.first }
         }
         .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in

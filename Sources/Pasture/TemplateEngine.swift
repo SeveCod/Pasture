@@ -20,8 +20,7 @@ enum TemplateEngine {
                 pattern: #"\{\{([A-Za-z_][A-Za-z0-9_]*)(?:=([^}]*))?\}\}"#
             )
         } catch {
-            assertionFailure("TemplateEngine regex failed to compile: \(error)")
-            return NSRegularExpression()
+            fatalError("TemplateEngine regex failed to compile: \(error)")
         }
     }()
 
