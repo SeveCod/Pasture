@@ -95,7 +95,7 @@ final class MDFileManager: ObservableObject {
 
     // MARK: — Helpers
 
-    private static func isInsidePasture(_ url: URL) -> Bool {
+    static func isInsidePasture(_ url: URL) -> Bool {
         let target = url.standardizedFileURL.path
         let base = pastureDir.standardizedFileURL.path
         return target == base || target.hasPrefix(base + "/")
@@ -128,6 +128,10 @@ final class MDFileManager: ObservableObject {
     }
 
     // MARK: — Lifecycle
+
+    init() {
+        setup()
+    }
 
     func setup() {
         let fm = FileManager.default
@@ -436,5 +440,11 @@ final class MDFileManager: ObservableObject {
 
     func totalTokens(for files: [MDFile]) -> Int {
         files.reduce(0) { $0 + $1.tokens }
+    }
+
+    // MARK: — Export
+
+    func exportToFile(_ context: String, to destination: ExportDestination) throws {
+        try context.write(to: destination.url, atomically: true, encoding: .utf8)
     }
 }

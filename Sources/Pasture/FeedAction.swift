@@ -5,35 +5,65 @@ import PastureKit
 struct FeedButton: View {
     let targets: [MDFile]
     let totalTokens: Int
-    let action: () -> Void
+    let destinations: [ExportDestination]
+    let onClipboard: () -> Void
+    let onExport: (ExportDestination) -> Void
     @State private var hover = false
 
     var body: some View {
         let isDisabled = targets.isEmpty
 
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "leaf.fill")
-                    .rotationEffect(.degrees(15))
-                Text("Feed \(TokenEstimator.formatted(totalTokens))")
-                    .font(.pastureToolbarLabel)
+        if destinations.isEmpty {
+            Button(action: onClipboard) {
+                buttonLabel(isDisabled: isDisabled)
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, PastureLayout.feedButtonHPadding)
-            .padding(.vertical, PastureLayout.feedButtonVPadding)
-            .background(
-                isDisabled
-                    ? AnyShapeStyle(Color.pastureTextTertiaryLight.opacity(0.3))
-                    : AnyShapeStyle(hover ? LinearGradient.pastureFeedButtonHover : LinearGradient.pastureFeedButton)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: PastureLayout.feedButtonRadius))
-            .scaleEffect(hover && !isDisabled ? 1.02 : 1.0)
-            .animation(.easeInOut(duration: PastureEffects.animationQuick), value: hover)
+            .buttonStyle(.plain)
+            .onHover { hovering in hover = hovering }
+            .disabled(isDisabled)
+            .help("Copy wrapped in <context> tags for Claude")
+        } else {
+            Menu {
+                Button("Copy to Clipboard") { onClipboard() }
+                Divider()
+                ForEach(destinations) { dest in
+                    Button("Export to \(dest.name)") { onExport(dest) }
+                }
+            } label: {
+                buttonLabel(isDisabled: isDisabled)
+            } primaryAction: {
+                if let defaultID = ExportSettings.defaultDestinationID(),
+                   let dest = destinations.first(where: { $0.id == defaultID }) {
+                    onExport(dest)
+                } else {
+                    onClipboard()
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .onHover { hovering in hover = hovering }
+            .disabled(isDisabled)
+            .help("Feed: click for default, hold for options")
         }
-        .buttonStyle(.plain)
-        .onHover { hovering in hover = hovering }
-        .disabled(isDisabled)
-        .help("Copy wrapped in <context> tags for Claude")
+    }
+
+    @ViewBuilder
+    private func buttonLabel(isDisabled: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "leaf.fill")
+                .rotationEffect(.degrees(15))
+            Text("Feed \(TokenEstimator.formatted(totalTokens))")
+                .font(.pastureToolbarLabel)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, PastureLayout.feedButtonHPadding)
+        .padding(.vertical, PastureLayout.feedButtonVPadding)
+        .background(
+            isDisabled
+                ? AnyShapeStyle(Color.pastureTextTertiaryLight.opacity(0.3))
+                : AnyShapeStyle(hover ? LinearGradient.pastureFeedButtonHover : LinearGradient.pastureFeedButton)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: PastureLayout.feedButtonRadius))
+        .scaleEffect(hover && !isDisabled ? 1.02 : 1.0)
+        .animation(.easeInOut(duration: PastureEffects.animationQuick), value: hover)
     }
 }
 
@@ -55,17 +85,29 @@ struct TemplateSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach($variables) { $variable in
-                        HStack {
+                        HStack(alignment: .top) {
                             Text("{{\(variable.name)}}")
                                 .font(.pastureTemplateVar)
                                 .foregroundStyle(Color.pastureTemplate)
                                 .frame(width: PastureLayout.templateVarLabelWidth, alignment: .trailing)
-                            TextField(
-                                variable.defaultValue.isEmpty ? "Value" : variable.defaultValue,
-                                text: $variable.value
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: PastureLayout.templateVarInputWidth)
+                                .padding(.top, 4)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                TextField(
+                                    variable.kind == .list
+                                        ? "item1, item2, item3"
+                                        : (variable.defaultValue.isEmpty ? "Value" : variable.defaultValue),
+                                    text: $variable.value
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: PastureLayout.templateVarInputWidth)
+
+                                if variable.kind == .list && !variable.value.isEmpty {
+                                    Text("\(variable.listItems.count) items")
+                                        .font(.caption2)
+                                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                                }
+                            }
                         }
                     }
                 }

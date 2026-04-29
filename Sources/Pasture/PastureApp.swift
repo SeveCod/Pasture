@@ -2,19 +2,23 @@ import SwiftUI
 
 @main
 struct PastureApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var fm = MDFileManager()
+
     var body: some Scene {
-        WindowGroup {
+        Window("Pasture", id: "main") {
             ContentView()
+                .environmentObject(fm)
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) { }
             CommandMenu("File") {
-                Button("Save") {
-                    NotificationCenter.default.post(name: .forceSave, object: nil)
+                Button("Open in Default Editor") {
+                    NotificationCenter.default.post(name: .openInEditor, object: nil)
                 }
-                .keyboardShortcut("s", modifiers: .command)
+                .keyboardShortcut("e", modifiers: .command)
 
                 Button("Paste from Clipboard") {
                     NotificationCenter.default.post(name: .pasteFromClipboard, object: nil)
@@ -22,10 +26,20 @@ struct PastureApp: App {
                 .keyboardShortcut("v", modifiers: [.command, .shift])
             }
         }
+
+        MenuBarExtra("Pasture", systemImage: "leaf.fill") {
+            MenuBarView()
+                .environmentObject(fm)
+        }
+        .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 
 extension Notification.Name {
     static let pasteFromClipboard = Notification.Name("pasteFromClipboard")
-    static let forceSave = Notification.Name("forceSave")
+    static let openInEditor = Notification.Name("openInEditor")
 }

@@ -24,7 +24,7 @@ struct FileTransfer: Transferable {
 
 struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @StateObject private var fm = MDFileManager()
+    @EnvironmentObject private var fm: MDFileManager
     @State private var selectedFiles: Set<MDFile> = []
     @State private var activeFile: MDFile?
     @State private var showPasteSheet = false
@@ -36,9 +36,11 @@ struct ContentView: View {
     @State private var feedbackMessage: String?
     @State private var templateVariables: [TemplateVariable] = []
     @State private var pendingFeedTargets: [MDFile] = []
+    @State private var pendingDestination: ExportDestination?
     @State private var searchText = ""
     @State private var sortOrder: FileSortOrder = .date
     @State private var clipboardClearTrigger: Int = 0
+    @State private var exportDestinations: [ExportDestination] = ExportSettings.loadDestinations()
 
     var body: some View {
         NavigationSplitView {
@@ -61,14 +63,16 @@ struct ContentView: View {
             editorPanel
         }
         .toolbar { toolbarContent }
-        .onAppear { fm.setup() }
         .onReceive(NotificationCenter.default.publisher(for: .pasteFromClipboard)) { _ in
             showPasteSheet = true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .forceSave)) { _ in
-            if let file = activeFile, let idx = fm.files.firstIndex(of: file) {
-                fm.save(file: fm.files[idx])
+        .onReceive(NotificationCenter.default.publisher(for: .openInEditor)) { _ in
+            if let file = activeFile {
+                openInExternalEditor(file)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ExportSettings.didChangeNotification)) { _ in
+            exportDestinations = ExportSettings.loadDestinations()
         }
         .sheet(isPresented: $showPasteSheet) {
             NameInputSheet(title: "New file from clipboard", actionLabel: "Create") { name in
@@ -143,8 +147,7 @@ struct ContentView: View {
     private var editorPanel: some View {
         if let file = activeFile, let idx = fm.files.firstIndex(of: file) {
             VStack(spacing: 0) {
-                EditorView(file: $fm.files[idx], onSave: { fm.save(file: fm.files[idx]) })
-                    .background(Color.pastureEditor(colorScheme))
+                MarkdownPreviewView(file: fm.files[idx])
                 Color.pastureDivider(colorScheme).frame(height: 1)
                 editorStatusBar(file: fm.files[idx])
             }
@@ -179,6 +182,18 @@ struct ContentView: View {
             }
 
             Spacer()
+
+            Button { openInExternalEditor(file) } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 10))
+                    Text("Open in Editor")
+                        .font(.pastureStatusBar)
+                }
+                .foregroundStyle(Color.pastureAccent)
+            }
+            .buttonStyle(.plain)
+            .help("Open in default editor (Cmd+E)")
 
             Text("~\(TokenEstimator.formatted(file.tokens)) tokens")
                 .font(.pastureTokenCount)
@@ -275,7 +290,9 @@ struct ContentView: View {
             FeedButton(
                 targets: feedTargets,
                 totalTokens: fm.totalTokens(for: feedTargets),
-                action: feedClaude
+                destinations: exportDestinations,
+                onClipboard: { executeFeed(destination: nil) },
+                onExport: { dest in executeFeed(destination: dest) }
             )
 
             Button {
@@ -316,7 +333,7 @@ struct ContentView: View {
         fm.delete(files: [file])
     }
 
-    private func feedClaude() {
+    private func executeFeed(destination: ExportDestination?) {
         let targets = feedTargets
         guard !targets.isEmpty else { return }
 
@@ -326,12 +343,12 @@ struct ContentView: View {
         if !allVars.isEmpty {
             templateVariables = allVars
             pendingFeedTargets = targets
+            pendingDestination = destination
             showTemplateSheet = true
             return
         }
 
-        copyToClipboard(fm.feedContext(files: targets),
-                        message: "Copied \(targets.count == 1 ? targets[0].name : "\(targets.count) files") · ~\(TokenEstimator.formatted(fm.totalTokens(for: targets))) tokens")
+        deliverFeed(context: fm.feedContext(files: targets), targets: targets, destination: destination)
     }
 
     private func confirmTemplateFeed() {
@@ -339,12 +356,31 @@ struct ContentView: View {
         for file in pendingFeedTargets {
             rendered[file.url] = TemplateEngine.render(file.content, with: templateVariables)
         }
-        let count = pendingFeedTargets.count
-        copyToClipboard(fm.feedContext(files: pendingFeedTargets, renderedContents: rendered),
-                        message: "Fed \(count == 1 ? pendingFeedTargets[0].name : "\(count) files") with \(templateVariables.count) variables")
+        deliverFeed(
+            context: fm.feedContext(files: pendingFeedTargets, renderedContents: rendered),
+            targets: pendingFeedTargets,
+            destination: pendingDestination
+        )
         showTemplateSheet = false
         pendingFeedTargets = []
         templateVariables = []
+        pendingDestination = nil
+    }
+
+    private func deliverFeed(context: String, targets: [MDFile], destination: ExportDestination?) {
+        let label = targets.count == 1 ? targets[0].name : "\(targets.count) files"
+        let tokenLabel = "~\(TokenEstimator.formatted(fm.totalTokens(for: targets))) tokens"
+
+        if let dest = destination {
+            do {
+                try fm.exportToFile(context, to: dest)
+                withAnimation { feedbackMessage = "\(dest.name) \u{2190} \(label) \u{b7} \(tokenLabel)" }
+            } catch {
+                withAnimation { feedbackMessage = "Export failed: \(error.localizedDescription)" }
+            }
+        } else {
+            copyToClipboard(context, message: "Copied \(label) \u{b7} \(tokenLabel)")
+        }
     }
 
     private func copyToClipboard(_ text: String, message: String) {
@@ -386,8 +422,11 @@ struct ContentView: View {
         return hasValidProvider
     }
 
-    // Reconcilia selección tras recarga: MDFile son structs que se recrean, por lo que
-    // la identidad por URL puede cambiar. Fallback por nombre solo como último recurso.
+    private func openInExternalEditor(_ file: MDFile) {
+        guard MDFileManager.isInsidePasture(file.url) else { return }
+        NSWorkspace.shared.open(file.url)
+    }
+
     private func reconcileSelection(with newFiles: [MDFile]) {
         if let active = activeFile {
             if !newFiles.contains(active) {
