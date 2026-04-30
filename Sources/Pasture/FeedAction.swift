@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 import PastureKit
 
 struct FeedButton: View {
@@ -50,6 +49,7 @@ struct FeedButton: View {
         HStack(spacing: 5) {
             Image(systemName: "leaf.fill")
                 .rotationEffect(.degrees(15))
+                .accessibilityHidden(true)
             Text("Feed \(TokenEstimator.formatted(totalTokens))")
                 .font(.pastureToolbarLabel)
         }
@@ -64,6 +64,8 @@ struct FeedButton: View {
         .clipShape(RoundedRectangle(cornerRadius: PastureLayout.feedButtonRadius))
         .scaleEffect(hover && !isDisabled ? 1.02 : 1.0)
         .animation(.easeInOut(duration: PastureEffects.animationQuick), value: hover)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Feed \(TokenEstimator.formatted(totalTokens)) tokens")
     }
 }
 
@@ -126,6 +128,7 @@ struct TemplateSheet: View {
                     HStack(spacing: 4) {
                         Image(systemName: "leaf.fill")
                             .font(.system(size: 11))
+                            .accessibilityHidden(true)
                         Text("Feed")
                     }
                     .foregroundStyle(.white)
@@ -136,6 +139,7 @@ struct TemplateSheet: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
+                .accessibilityLabel("Feed with template variables")
             }
         }
         .padding(PastureLayout.sheetPadding)

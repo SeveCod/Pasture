@@ -377,6 +377,15 @@ enum PastureLayout {
     static let feedButtonHPadding: CGFloat = 14
     /// Feed button vertical padding.
     static let feedButtonVPadding: CGFloat = 6
+
+    // MARK: Ask Panel
+    static let askInputMinHeight: CGFloat = 36
+    static let askInputMaxHeight: CGFloat = 120
+    static let askInputPadding: CGFloat = 12
+    static let askContextBarHeight: CGFloat = 28
+    static let askResponsePadding: CGFloat = 16
+    static let askActionBarHeight: CGFloat = 32
+    static let streamingPulseSpeed: Double = 0.8
 }
 
 // ============================================================================

@@ -40,6 +40,7 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .transition(.opacity)
+                .accessibilityLabel("Clear search")
             }
 
             Menu {
@@ -63,6 +64,8 @@ struct SidebarView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help(sortOrder == .date ? "Sorted by date" : "Sorted by name")
+            .accessibilityLabel("Sort order")
+            .accessibilityValue(sortOrder == .date ? "Date" : "Name")
         }
         .padding(.horizontal, PastureLayout.searchBarHPadding)
         .padding(.vertical, PastureLayout.searchBarVPadding)
@@ -130,11 +133,7 @@ struct SidebarView: View {
                 showDeleteConfirmation = true
             }
         }
-        .onChange(of: selectedFiles) { oldVal, newVal in
-            if let previous = oldVal.first, oldVal.count == 1,
-               let idx = fm.files.firstIndex(of: previous) {
-                fm.save(file: fm.files[idx])
-            }
+        .onChange(of: selectedFiles) { _, newVal in
             if newVal.count == 1 { activeFile = newVal.first }
         }
         .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in
@@ -208,10 +207,13 @@ struct SidebarView: View {
             HStack(spacing: 4) {
                 Image(systemName: "number")
                     .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text("~\(TokenEstimator.formatted(totalTokens)) tokens")
                     .font(.pastureSummary)
             }
             .foregroundStyle(Color.pastureTokenBadge)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Approximately \(TokenEstimator.formatted(totalTokens)) tokens")
         }
         .padding(.horizontal, PastureLayout.summaryBarHPadding)
         .padding(.vertical, PastureLayout.summaryBarVPadding)

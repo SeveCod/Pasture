@@ -1,6 +1,35 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    nonisolated(unsafe) private var lockFD: Int32 = -1
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let lockPath = NSTemporaryDirectory() + "com.sevecod.pasture.lock"
+        lockFD = Darwin.open(lockPath, O_WRONLY | O_CREAT, 0o600)
+        guard lockFD >= 0 else { return }
+
+        if flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
+            Darwin.close(lockFD)
+            lockFD = -1
+            let myPID = ProcessInfo.processInfo.processIdentifier
+            let myName = ProcessInfo.processInfo.processName
+            if let existing = NSWorkspace.shared.runningApplications.first(where: {
+                $0.localizedName == myName && $0.processIdentifier != myPID
+            }) {
+                existing.activate()
+            }
+            DispatchQueue.main.async {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if lockFD >= 0 {
+            Darwin.close(lockFD)
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -10,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for window in sender.windows where window.canBecomeMain {
                 window.makeKeyAndOrderFront(self)
             }
+            sender.activate(ignoringOtherApps: true)
         }
         return true
     }

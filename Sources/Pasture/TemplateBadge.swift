@@ -22,5 +22,6 @@ struct TemplateBadge: View {
                     .fill(Color.pastureTemplateBg(colorScheme))
             }
         }
+        .accessibilityLabel("Template")
     }
 }

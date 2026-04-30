@@ -4,23 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Pasture
 
-A native macOS app (SwiftUI, no external dependencies) for managing Markdown context files in `~/.pasture/` and feeding them to AI assistants wrapped in XML `<context>` tags. Supports clipboard and direct file export. Lives in the menu bar for quick access. Built with Swift Package Manager, targets macOS 14+.
+A native macOS app (SwiftUI, no external dependencies) for managing Markdown context files in `~/.pasture/` and feeding them to AI assistants. Supports clipboard copy, direct file export, and built-in AI querying via Anthropic and OpenRouter APIs with streaming responses. Lives in the menu bar for quick access. Built with Swift Package Manager, targets macOS 14+.
 
-The detail panel is a read-only Markdown preview (not an editor). Users edit files in their preferred external editor; Pasture watches the filesystem and reflects changes automatically.
+The detail panel toggles between a read-only Markdown preview and an Ask mode for querying AI. Users edit files in their preferred external editor; Pasture watches the filesystem and reflects changes automatically.
 
 ## Build & Run
 
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
-swift test               # Run all PastureKit unit tests (103 tests, Swift Testing framework)
+swift test               # Run all PastureKit unit tests (289 tests, Swift Testing framework)
 swift test --filter TemplateEngineTests                        # Run one test suite
 swift test --filter TemplateEngineTests/renderSimpleReplacement # Run a single test
 swift run                # Build + launch the app
 ./scripts/bundle.sh      # Build release + create .app bundle in dist/
 ```
 
-Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit, Combine, AppKit).
+Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit, Combine, AppKit, Security).
 
 ## Architecture
 
@@ -28,34 +28,43 @@ Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit
 
 ### Targets
 
-- **PastureKit** (`Sources/PastureKit/`) — Pure logic, no UI: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator`, `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`. All public. This is the testable module.
+- **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security). All public. This is the testable module.
 - **Pasture** (`Sources/Pasture/`) — SwiftUI app. Re-exports PastureKit via `@_exported import PastureKit` in `TemplateEngine.swift`.
-- **PastureKitTests** (`Tests/PastureKitTests/`) — 103 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`).
+- **PastureKitTests** (`Tests/PastureKitTests/`) — 289 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`).
 
 ### Data flow
 
-`MDFileManager` is the single `@StateObject` owned by `PastureApp` and shared via `@EnvironmentObject` to both `ContentView` (main window) and `MenuBarView` (menu bar popover). It manages all file I/O, the file list (`@Published var files`), cached collections (`@Published var collections`), search filtering, directory watching via `DispatchSource`, and file export. Files live as `MDFile` value types (struct, `Identifiable` by URL). The filesystem (`~/.pasture/`) is the source of truth.
+`MDFileManager` is the single `@StateObject` owned by `PastureApp` and shared via `@EnvironmentObject` to both `ContentView` (main window) and `MenuBarView` (menu bar popover). It manages all file I/O, the file list (`@Published var files`), cached collections (`@Published var collections`), search filtering, directory watching via `DispatchSource`, and file export. Files live as `MDFile` value types (defined in PastureKit, `Identifiable` by URL). The filesystem (`~/.pasture/`) is the source of truth.
+
+`AskViewModel` is a `@StateObject` owned by `ContentView` (survives mode toggle). It holds the Ask panel state and coordinates with `AIClient` for streaming responses.
 
 ### App scenes
 
 `PastureApp` declares three scenes:
 - **`Window("Pasture", id: "main")`** — Main window with `ContentView`. Single-instance via `Window` (not `WindowGroup`).
 - **`MenuBarExtra`** — Persistent menu bar icon (leaf) with `MenuBarView` popover (`.menuBarExtraStyle(.window)`).
-- **`Settings`** — Preferences panel (`SettingsView`) for managing export destinations (Cmd+,).
+- **`Settings`** — Preferences panel (`SettingsView`) for managing export destinations and AI configuration (Cmd+,).
 
 `AppDelegate` prevents app termination when the main window closes (`applicationShouldTerminateAfterLastWindowClosed → false`) and handles Dock icon reopen.
 
 ### Key files
 
-- **`ContentView.swift`** — UI orchestration: navigation split view, Markdown preview panel, toolbar, all sheets (paste/merge/template), Feed action logic with clipboard and file export modes. "Open in Editor" button (Cmd+E) delegates editing to the system default app. Delegates sidebar to `SidebarView` and feed button to `FeedButton`.
+- **`ContentView.swift`** — UI orchestration: navigation split view, detail panel with `DetailMode` toggle (preview/ask), toolbar, all sheets (paste/merge/template). Delegates subviews to `EditorStatusBar`, `PastureEmptyState`, `FeedbackToast`, `SidebarView`, `FeedButton`, and `FeedService`.
+- **`ContentTypes.swift`** — Standalone types used by ContentView: `FileSortOrder` enum, `DetailMode` enum, `FileTransfer` (Transferable for drag & drop).
+- **`EditorStatusBar.swift`** — Status bar below the Markdown preview: file name, collection badge, template badge, "Open in Editor" button, token count.
+- **`PastureEmptyState.swift`** — Empty state view (no file selected) and `FeedbackToast` (material capsule toast for transient messages).
+- **`FeedService.swift`** — `@MainActor final class` shared between `ContentView` and `MenuBarView`. Encapsulates feed execution (template variable detection, clipboard copy with 60s auto-clear, file export), toast feedback, and template confirmation. Eliminates feed logic duplication between main window and menu bar.
+- **`AskView.swift`** — Ask panel: context bar (file count, tokens, model, cost), response area with Markdown rendering, input bar (TextEditor + Ask/Stop button), action bar (Copy, Save, Export .md). Includes `PulseModifier` for streaming animation.
+- **`AskViewModel.swift`** — `@MainActor final class` managing Ask state: question, responseText, isStreaming, error, provider/model selection. Coordinates `AIClient.ask()` via cancellable `streamTask`. Methods: `send()`, `stop()`, `clear()`, `copyResponse()`, `saveResponse()`, `reloadSettings()`.
 - **`MarkdownPreviewView.swift`** — Read-only Markdown preview using `AttributedString(markdown:, options: .init(interpretedSyntax: .full))`. Text selection enabled. Falls back to plain text if parsing fails.
 - **`SidebarView.swift`** — Search bar, sort toggle (date/name), file list with collection sections, context menus, selection summary with token count.
 - **`FeedAction.swift`** — `FeedButton` (renders as plain button when no export destinations configured, or as `Menu` with `primaryAction` when destinations exist — click = default action, hold = menu with clipboard + export options) and `TemplateSheet` (variable input before feeding, adapts UI for `.scalar` vs `.list` variables).
-- **`MDFileManager.swift`** — Also defines `MDFile` struct. All I/O: load, save, create, delete, import (`.md` and `.pdf`), merge, move between collections, feed context generation (CDATA-wrapped), file export (`exportToFile`), directory watching. Calls `setup()` from `init()`. Path traversal consolidated via `isInsidePasture()` (internal visibility, used by ContentView for "Open in Editor" validation).
-- **`MenuBarView.swift`** — Compact popover: header with "open window" button, search, file list with checkboxes (`MenuBarFileRow`), footer with Feed button. Independent selection from main window. Supports both clipboard and file export.
-- **`SettingsView.swift`** — Form for managing export destinations (add/remove/choose path via `NSSavePanel`). Star marks the default destination. Persists via `ExportSettings` (UserDefaults). Posts `ExportSettings.didChangeNotification` on save.
+- **`MDFileManager.swift`** — Core file manager: state (`files`, `collections`, `searchQuery`, `lastError`), directory watching with debounced reload, CRUD (load, save, create, delete), collection management (create/move/delete), feed context delegation to `ContextBuilder`, file export. Path traversal via `isInsidePasture()` delegates to `PathValidator`. `MDFile` convenience extension for `collection` property using `pastureDir`.
+- **`MDFileManager+Import.swift`** — Extension: file import dispatch by type (.md, .pdf, .csv, .docx/.doc), `merge()`, and `scanFolder()` for recursive .md import (max 500 files).
+- **`MenuBarView.swift`** — Compact popover: header with "open window" button, search, file list with checkboxes (`MenuBarFileRow`), footer with Feed button. Independent selection from main window. Feed logic delegated to `FeedService`.
+- **`SettingsView.swift`** — `TabView` with two tabs: `ExportSettingsTab` (export destination management via NSSavePanel) and `AISettingsTab` (provider picker, API key SecureField with Keychain save/delete, model picker with pricing, test connection button). Posts `ExportSettings.didChangeNotification` and `AISettings.didChangeNotification` on save.
 - **`DesignTokens.swift`** — Complete design system. All UI colors, typography, layout constants, and visual effects.
-- **`PastureApp.swift`** — App entry point. Three scenes (Window, MenuBarExtra, Settings). Menu commands: "Open in Default Editor" (Cmd+E), "Paste from Clipboard" (Cmd+Shift+V). `@NSApplicationDelegateAdaptor` for `AppDelegate`.
+- **`PastureApp.swift`** — App entry point. Three scenes (Window, MenuBarExtra, Settings). Menu commands: "Open in Default Editor" (Cmd+E), "Paste from Clipboard" (Cmd+Shift+V), "Toggle Ask Mode" (Cmd+Shift+A). `@NSApplicationDelegateAdaptor` for `AppDelegate`.
 - **`AppDelegate.swift`** — Prevents quit on last window close, handles Dock icon reopen.
 
 ### PastureKit models
@@ -65,20 +74,42 @@ Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit
 - **`TemplateNode`** — Recursive enum representing the AST: `.text`, `.variable`, `.currentValue`, `.currentIndex`, `.ifBlock`, `.unlessBlock`, `.eachBlock`.
 - **`ExportDestination`** — `Codable`, `Sendable` struct: id, name, path, computed `url` and `isWritable`. Represents a file path where Feed can write context directly.
 - **`ExportSettings`** — Static namespace for UserDefaults persistence of export destinations and default destination ID. Fires `didChangeNotification` when settings change (consumed by `ContentView` and `MenuBarView` via `.onReceive`).
+- **`AIProviderKind`** — Enum: `.anthropic`, `.openRouter`. Drives API endpoint and auth header format.
+- **`AIModel`** — `Codable`, `Hashable`, `Sendable`, `Identifiable` struct: id, displayName, provider, contextWindow, inputCostPer1M, outputCostPer1M. Static catalog via `defaultModels`, lookup via `models(for:)` and `model(byID:)`. `resolve(id:preferredProvider:)` provides a safe fallback chain: exact match → first model for preferred provider → first default model.
+- **`AISettings`** — Static namespace (same pattern as `ExportSettings`). Provider and model ID in UserDefaults; API keys in Keychain via `KeychainStore`. Fires `didChangeNotification`.
+- **`KeychainStore`** — Static methods: `save(key:value:service:)` (upsert), `load(key:service:)`, `delete(key:service:)`. Uses Security.framework. Items created with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Defines `KeychainError`.
+- **`AIClient`** — `actor` wrapping `URLSession`. `ask(question:context:model:apiKey:) -> AsyncThrowingStream<String, Error>`. Builds provider-specific requests (Anthropic: `x-api-key` + `anthropic-version`, OpenRouter: `Bearer` auth). Streams via `URLSession.bytes(for:)` + `SSEParser`. Retries automatically on 429 (rate limited) and 529 (overloaded) with exponential backoff (max 2 retries, respects `Retry-After` header, capped at 30s). HTTP error mapping: 401→invalidAPIKey, 429→rateLimited, 529→serverError.
+- **`SSEEvent`** — Sendable struct: event type + data.
+- **`SSELineBuffer`** — Sendable stateful accumulator for SSE line parsing.
+- **`SSEParser`** — Static `parse(line:buffer:) -> SSEEvent?`. Standard SSE spec: `event:`, `data:`, empty line = dispatch.
+- **`AIClientError`** — Sendable enum with 8 cases: noAPIKey, invalidAPIKey, contextTooLarge, rateLimited, timeout, serverError, networkError, invalidResponse. All with `LocalizedError` conformance.
+- **`TokenEstimator`** — Heuristic token counter (~4 chars/token). `estimatedCost(inputTokens:outputTokens:model:)` for pre-send cost calculation. `formattedCost(_:)` for display (`"<$0.001"`, `"~$0.003"`).
+- **`ContextBuilder`** — Static `build(files:) -> String`. Takes `[FileEntry]` (name + content) and produces XML context output. Handles CDATA escaping and multi-file wrapping. `MDFileManager.feedContext` delegates to this.
+- **`DOCXConverter`** — `convert(url:)` reads .doc/.docx files via `NSAttributedString` and converts to Markdown. `convertAttributedString(_:)` for direct conversion. Detects headings (font size ratio), bold/italic (font traits), and links. Collapses consecutive empty lines.
+- **`PathValidator`** — Static `isInside(target:base:) -> Bool`. Validates path containment using `standardizedFileURL.path` with trailing slash guard. `MDFileManager.isInsidePasture` delegates to this.
+- **`MDFile`** — `Sendable` struct in PastureKit. Identifiable by URL, Hashable by URL, Equatable by URL. Two inits: memberwise (for testing) and I/O (`init(url:)` reads from disk). `collection(relativeTo:)` computes parent directory name relative to a base URL. `updateDerivedProperties()` recalculates `tokens` and `hasTemplateVars`. The Pasture app adds a convenience `collection` computed property via extension using `MDFileManager.pastureDir`.
 
 ### Patterns to know
 
-**Menu → View communication**: `PastureApp` posts `.openInEditor` and `.pasteFromClipboard` notifications. `ContentView` subscribes via `.onReceive`.
+**Menu → View communication**: `PastureApp` posts `.openInEditor`, `.pasteFromClipboard`, and `.toggleAskMode` notifications. `ContentView` subscribes via `.onReceive`.
 
-**Settings → Views communication**: `SettingsView` posts `ExportSettings.didChangeNotification`. Both `ContentView` and `MenuBarView` subscribe to reload export destinations.
+**Settings → Views communication**: `SettingsView` posts `ExportSettings.didChangeNotification` and `AISettings.didChangeNotification`. `ContentView`, `MenuBarView`, and `AskView` subscribe to reload state.
 
 **Color scheme adaptation**: Static functions `Color.pastureX(_ scheme: ColorScheme)` resolve light/dark variants. Never hardcode colors directly.
 
-**Feed output format**: Single file → `<context name="file.md"><![CDATA[content]]></context>`. Multiple → wrapped in `<documents>`. Template variables and blocks are substituted only at feed time, never persisted. XML attributes escaped via `xmlEscapedAttribute`.
+**Feed output format**: Generated by `ContextBuilder.build(files:)` in PastureKit. Single file → `<context name="file.md"><![CDATA[content]]></context>`. Multiple → wrapped in `<documents>`. `MDFileManager.feedContext` maps `MDFile` arrays to `ContextBuilder.FileEntry` and delegates. Template variables and blocks are substituted only at feed time, never persisted. XML attributes escaped via `xmlEscapedAttribute`. CDATA closing sequences (`]]>`) are escaped to prevent injection.
 
 **Template rendering pipeline**: `parse()` (string → `[TemplateNode]` AST) → `render(nodes:with:)` (AST → string). Single-pass: variable values are never re-parsed as template syntax. The public `render(_:with:)` convenience calls both steps. `extractVariables()` walks the AST to collect variables with correct `kind` (`.scalar` for `#if`/`#unless`, `.list` for `#each`).
 
-**Feed delivery modes**: `deliverFeed(context:targets:destination:)` — if destination is nil, copies to clipboard with 60s auto-clear. If destination is an `ExportDestination`, writes to file via `fm.exportToFile()`. Default destination (starred in Settings) is used as the Feed button's primary action when configured.
+**Feed delivery modes**: `FeedService.deliverFeed(context:targets:destination:fm:)` — if destination is nil, copies to clipboard with 60s auto-clear. If destination is an `ExportDestination`, writes to file via `fm.exportToFile()`. Default destination (starred in Settings) is used as the Feed button's primary action when configured. `FeedService` is shared between `ContentView` and `MenuBarView` as `@StateObject`.
+
+**Ask mode toggle**: `PastureApp` posts `.toggleAskMode` (Cmd+Shift+A). `ContentView` toggles `detailMode` between `.preview` and `.ask` with animation. `AskViewModel` survives the toggle as `@StateObject`.
+
+**AI streaming pipeline**: `AIClient.ask()` returns `AsyncThrowingStream<String, Error>`. Retries 429/529 errors up to 2 times with exponential backoff before surfacing the error. `AskViewModel` consumes the stream in a cancellable `Task` (`streamTask`). Cancellation propagates via `Task.isCancelled` check in both the retry loop and the SSE reading loop.
+
+**AI settings propagation**: `AISettingsTab` persists to UserDefaults + Keychain. `AISettings.didChangeNotification` is received by `AskView` via `.onReceive`, which calls `viewModel.reloadSettings()`.
+
+**Context window guard**: `AskViewModel.send()` checks `inputTokenEstimate > model.contextWindow` before sending and emits `AIClientError.contextTooLarge`.
 
 **External editing**: "Open in Editor" (Cmd+E or status bar button) calls `NSWorkspace.shared.open(file.url)` after validating `isInsidePasture()`. The file watcher (`DispatchSource` with 0.5s debounce) automatically reloads files when the external editor saves.
 
@@ -90,18 +121,24 @@ Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit
 
 ### Security invariants
 
-- All file operations validated via `isInsidePasture()` — consolidated path traversal check against `pastureDir.standardizedFileURL.path`. Also applied before `NSWorkspace.shared.open()` in "Open in Editor".
+- All file operations validated via `isInsidePasture()` which delegates to `PathValidator.isInside(target:base:)` in PastureKit — uses `standardizedFileURL.path` comparison with trailing slash guard to prevent prefix tricks. Also applied before `NSWorkspace.shared.open()` in "Open in Editor".
 - Export destinations are explicitly outside `~/.pasture/` — `isInsidePasture()` is NOT applied to export paths.
 - Symlinks filtered out via `realSubdirectories(in:)` and `mdFiles(in:)`.
-- File names sanitized via `FilenameSanitizer.sanitize()` (no `/`, `\0`, `:`, `\`).
+- File names sanitized via `FilenameSanitizer.sanitize()` (no `/`, `\0`, `:`, `\`). Used in both file creation and Ask response saving.
 - Feed output uses CDATA wrapping to prevent content injection.
 - Template engine: single-pass rendering prevents template injection via variable values. Nesting depth capped at 16 (both parser and renderer). Iteration count capped at 1,000 for `#each` blocks.
 - Clipboard auto-clears after 60 seconds post-feed.
+- API keys stored in macOS Keychain via `KeychainStore` with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Never stored in UserDefaults or plaintext.
+- All network calls use HTTPS with default ATS (TLS 1.2+). No custom URLSession delegates or certificate pinning overrides.
+- Error response bodies limited to 2000 bytes. Error messages truncated to 200 chars before display.
+- Context size validated against `model.contextWindow` before sending API requests.
 - App is not sandboxed (SPM build, no entitlements). If sandboxed in the future, export destinations will need security-scoped bookmarks.
 
 ### Concurrency model
 
 `MDFileManager` is `@MainActor`. The directory watcher uses a module-level free function `makeDirectoryWatchSource(fd:)` to avoid Swift 6 actor isolation in GCD closures. It posts a notification that the main-actor observer receives and debounces (0.5s). `nonisolated(unsafe)` marks the GCD-managed watcher state.
+
+`AIClient` is an `actor` (Swift 6 safe). `AskViewModel` is `@MainActor`. The streaming bridge uses `AsyncThrowingStream` returned from the actor method and consumed on MainActor via a cancellable `streamTask: Task<Void, Never>?`.
 
 ## Bundle ID & versioning
 

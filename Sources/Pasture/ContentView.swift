@@ -2,25 +2,7 @@ import SwiftUI
 import AppKit
 import Combine
 import UniformTypeIdentifiers
-import CoreTransferable
 import PastureKit
-
-enum FileSortOrder: String, CaseIterable {
-    case date = "Date"
-    case name = "Name"
-}
-
-struct FileTransfer: Transferable {
-    let url: URL
-
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(contentType: .plainText) { transfer in
-            SentTransferredFile(transfer.url, allowAccessingOriginalFile: true)
-        } importing: { received in
-            FileTransfer(url: received.file)
-        }
-    }
-}
 
 struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -29,18 +11,15 @@ struct ContentView: View {
     @State private var activeFile: MDFile?
     @State private var showPasteSheet = false
     @State private var showMergeSheet = false
-    @State private var showTemplateSheet = false
     @State private var showNewCollectionSheet = false
     @State private var showDeleteConfirmation = false
     @State private var filePendingDeletion: MDFile?
-    @State private var feedbackMessage: String?
-    @State private var templateVariables: [TemplateVariable] = []
-    @State private var pendingFeedTargets: [MDFile] = []
-    @State private var pendingDestination: ExportDestination?
     @State private var searchText = ""
     @State private var sortOrder: FileSortOrder = .date
-    @State private var clipboardClearTrigger: Int = 0
     @State private var exportDestinations: [ExportDestination] = ExportSettings.loadDestinations()
+    @State private var detailMode: DetailMode = .preview
+    @StateObject private var askViewModel = AskViewModel()
+    @StateObject private var feedService = FeedService()
 
     var body: some View {
         NavigationSplitView {
@@ -71,6 +50,11 @@ struct ContentView: View {
                 openInExternalEditor(file)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleAskMode)) { _ in
+            withAnimation(.easeInOut(duration: PastureEffects.animationStandard)) {
+                detailMode = detailMode == .preview ? .ask : .preview
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: ExportSettings.didChangeNotification)) { _ in
             exportDestinations = ExportSettings.loadDestinations()
         }
@@ -93,16 +77,16 @@ struct ContentView: View {
         .sheet(isPresented: $showNewCollectionSheet) {
             NameInputSheet(title: "New collection", actionLabel: "Create") { name in
                 if fm.createCollection(name: name) {
-                    withAnimation { feedbackMessage = "Collection '\(name)' created" }
+                    feedService.showFeedback("Collection '\(name)' created")
                 }
             }
         }
-        .sheet(isPresented: $showTemplateSheet) {
+        .sheet(isPresented: $feedService.showTemplateSheet) {
             TemplateSheet(
-                variables: $templateVariables,
-                totalTokens: fm.totalTokens(for: pendingFeedTargets),
-                onCancel: { showTemplateSheet = false },
-                onConfirm: confirmTemplateFeed
+                variables: $feedService.templateVariables,
+                totalTokens: fm.totalTokens(for: feedService.pendingFeedTargets),
+                onCancel: { feedService.showTemplateSheet = false },
+                onConfirm: { feedService.confirmTemplateFeed(fm: fm) }
             )
         }
         .alert("Delete file?",
@@ -114,10 +98,10 @@ struct ContentView: View {
             Text("'\(file.name).md' will be permanently deleted.")
         }
         .overlay(alignment: .bottom) { feedbackOverlay }
-        .animation(.easeInOut(duration: PastureEffects.animationStandard), value: feedbackMessage)
+        .animation(.easeInOut(duration: PastureEffects.animationStandard), value: feedService.feedbackMessage)
         .onChange(of: fm.lastError) { _, error in
             if let error {
-                withAnimation { feedbackMessage = error }
+                feedService.showFeedback(error)
                 fm.lastError = nil
             }
         }
@@ -130,133 +114,32 @@ struct ContentView: View {
         .onReceive(Just(searchText).debounce(for: .milliseconds(300), scheduler: RunLoop.main)) { value in
             if !value.isEmpty { fm.searchQuery = value }
         }
-        .task(id: clipboardClearTrigger) {
-            guard clipboardClearTrigger > 0 else { return }
-            let savedChangeCount = NSPasteboard.general.changeCount
-            try? await Task.sleep(for: .seconds(60))
-            guard !Task.isCancelled,
-                  NSPasteboard.general.changeCount == savedChangeCount else { return }
-            NSPasteboard.general.clearContents()
-            withAnimation { feedbackMessage = "Clipboard cleared" }
-        }
     }
 
     // MARK: — Editor
 
     @ViewBuilder
     private var editorPanel: some View {
-        if let file = activeFile, let idx = fm.files.firstIndex(of: file) {
-            VStack(spacing: 0) {
-                MarkdownPreviewView(file: fm.files[idx])
-                Color.pastureDivider(colorScheme).frame(height: 1)
-                editorStatusBar(file: fm.files[idx])
-            }
-        } else {
-            emptyState
-        }
-    }
-
-    private func editorStatusBar(file: MDFile) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 10))
-                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-            Text(file.name + ".md")
-                .font(.pastureStatusBar)
-                .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-
-            if let collection = file.collection {
-                Text(collection)
-                    .font(.pastureStatusBar)
-                    .foregroundStyle(Color.pastureTokenBadge)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(
-                        Color.pastureTokenBadgeBg(colorScheme),
-                        in: RoundedRectangle(cornerRadius: PastureEffects.cornerRadiusSmall)
-                    )
-            }
-
-            if file.hasTemplateVars {
-                TemplateBadge(compact: false, colorScheme: colorScheme)
-            }
-
-            Spacer()
-
-            Button { openInExternalEditor(file) } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 10))
-                    Text("Open in Editor")
-                        .font(.pastureStatusBar)
+        switch detailMode {
+        case .preview:
+            if let file = activeFile, let idx = fm.files.firstIndex(of: file) {
+                VStack(spacing: 0) {
+                    MarkdownPreviewView(file: fm.files[idx])
+                    Color.pastureDivider(colorScheme).frame(height: 1)
+                    EditorStatusBar(file: fm.files[idx]) { openInExternalEditor(fm.files[idx]) }
                 }
-                .foregroundStyle(Color.pastureAccent)
+            } else {
+                PastureEmptyState()
             }
-            .buttonStyle(.plain)
-            .help("Open in default editor (Cmd+E)")
-
-            Text("~\(TokenEstimator.formatted(file.tokens)) tokens")
-                .font(.pastureTokenCount)
-                .foregroundStyle(Color.pastureTokenBadge)
+        case .ask:
+            AskView(viewModel: askViewModel, feedTargets: feedTargets)
         }
-        .padding(.horizontal, PastureLayout.statusBarHPadding)
-        .padding(.vertical, PastureLayout.statusBarVPadding)
-        .background(Color.pastureStatusBar(colorScheme))
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: PastureLayout.emptyStateSpacing) {
-            Image(systemName: "leaf.fill")
-                .font(.system(size: PastureLayout.emptyStateIconSize))
-                .foregroundStyle(LinearGradient.pastureBrand)
-                .rotationEffect(.degrees(-15))
-                .padding(.bottom, 4)
-
-            HStack(spacing: 8) {
-                Circle().fill(Color.pastureGrassDark).frame(width: 4, height: 4)
-                Circle().fill(Color.pastureGrassMedium).frame(width: 4, height: 4)
-                Circle().fill(Color.pastureGrassOrange).frame(width: 4, height: 4)
-            }
-            .padding(.bottom, 4)
-
-            Text("Feed your AI")
-                .font(.pastureEmptyHeading)
-                .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-
-            Text("Select a file or paste content from the clipboard")
-                .font(.pastureEmptySubtext)
-                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-
-            Text("Use {{VARIABLE}} or {{VAR=default}} for templates")
-                .font(.pastureEmptyHint)
-                .foregroundStyle(Color.pastureTextTertiary(colorScheme).opacity(0.7))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.pastureEditor(colorScheme))
     }
 
     @ViewBuilder
     private var feedbackOverlay: some View {
-        if let msg = feedbackMessage {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Color.pastureSuccess)
-                Text(msg)
-                    .font(.callout)
-                    .foregroundStyle(Color.pastureTextPrimary(colorScheme))
-            }
-            .padding(.horizontal, PastureLayout.toastHPadding)
-            .padding(.vertical, PastureLayout.toastVPadding)
-            .background(.regularMaterial, in: Capsule())
-            .pastureShadow(PastureEffects.shadowFloat)
-            .padding(.bottom, PastureLayout.toastBottomOffset)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .task(id: msg) {
-                try? await Task.sleep(for: .seconds(2.5))
-                withAnimation(.easeOut(duration: PastureEffects.animationStandard)) {
-                    feedbackMessage = nil
-                }
-            }
+        if let msg = feedService.feedbackMessage {
+            FeedbackToast(message: msg)
         }
     }
 
@@ -269,23 +152,57 @@ struct ContentView: View {
                 Label("New Collection", systemImage: "folder.badge.plus")
             }
             .help("Create a new collection")
+            .accessibilityLabel("New Collection")
 
             Button { showPasteSheet = true } label: {
                 Label("Paste", systemImage: "doc.on.clipboard")
             }
             .help("Create new .md from clipboard")
+            .accessibilityLabel("Paste from clipboard")
+            .accessibilityHint("Creates a new Markdown file from clipboard content")
 
-            Button { importPDFFromDisk() } label: {
-                Label("Import PDF", systemImage: "doc.richtext")
+            Button { importFromDisk() } label: {
+                Label("Import", systemImage: "doc.badge.plus")
             }
-            .help("Import a PDF as Markdown")
+            .help("Import files (PDF, CSV, DOCX)")
+            .accessibilityLabel("Import files")
+            .accessibilityHint("Import PDF, CSV, or DOCX files as Markdown")
+
+            Button { scanFolderFromDisk() } label: {
+                Label("Scan Folder", systemImage: "folder.badge.questionmark")
+            }
+            .help("Scan a folder for .md files and import them")
+            .accessibilityLabel("Scan folder")
+            .accessibilityHint("Scan a folder for Markdown files and import them")
+
+            Button { exportFeedToDisk() } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .disabled(feedTargets.isEmpty)
+            .help("Export context as .md to any location")
+            .accessibilityLabel("Export context")
 
             if selectedFiles.count > 1 {
                 Button { showMergeSheet = true } label: {
                     Label("Merge \(selectedFiles.count)", systemImage: "arrow.triangle.merge")
                 }
                 .help("Combine \(selectedFiles.count) files into one")
+                .accessibilityLabel("Merge \(selectedFiles.count) files")
+                .accessibilityHint("Combine selected files into a single file")
             }
+
+            Button {
+                withAnimation(.easeInOut(duration: PastureEffects.animationStandard)) {
+                    detailMode = detailMode == .preview ? .ask : .preview
+                }
+            } label: {
+                Label("Ask", systemImage: detailMode == .ask
+                      ? "bubble.left.and.text.bubble.right.fill"
+                      : "bubble.left.and.text.bubble.right")
+            }
+            .help("Toggle Ask mode (Cmd+Shift+A)")
+            .accessibilityLabel("Toggle Ask mode")
+            .accessibilityValue(detailMode == .ask ? "Active" : "Inactive")
 
             FeedButton(
                 targets: feedTargets,
@@ -308,6 +225,7 @@ struct ContentView: View {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
             .help("Reload file list from ~/.pasture/")
+            .accessibilityLabel("Refresh file list")
         }
     }
 
@@ -334,78 +252,59 @@ struct ContentView: View {
     }
 
     private func executeFeed(destination: ExportDestination?) {
-        let targets = feedTargets
-        guard !targets.isEmpty else { return }
-
-        let allContent = targets.map(\.content).joined(separator: "\n")
-        let allVars = TemplateEngine.extractVariables(from: allContent)
-
-        if !allVars.isEmpty {
-            templateVariables = allVars
-            pendingFeedTargets = targets
-            pendingDestination = destination
-            showTemplateSheet = true
-            return
-        }
-
-        deliverFeed(context: fm.feedContext(files: targets), targets: targets, destination: destination)
+        feedService.executeFeed(targets: feedTargets, destination: destination, fm: fm)
     }
 
-    private func confirmTemplateFeed() {
-        var rendered: [URL: String] = [:]
-        for file in pendingFeedTargets {
-            rendered[file.url] = TemplateEngine.render(file.content, with: templateVariables)
-        }
-        deliverFeed(
-            context: fm.feedContext(files: pendingFeedTargets, renderedContents: rendered),
-            targets: pendingFeedTargets,
-            destination: pendingDestination
-        )
-        showTemplateSheet = false
-        pendingFeedTargets = []
-        templateVariables = []
-        pendingDestination = nil
-    }
-
-    private func deliverFeed(context: String, targets: [MDFile], destination: ExportDestination?) {
-        let label = targets.count == 1 ? targets[0].name : "\(targets.count) files"
-        let tokenLabel = "~\(TokenEstimator.formatted(fm.totalTokens(for: targets))) tokens"
-
-        if let dest = destination {
-            do {
-                try fm.exportToFile(context, to: dest)
-                withAnimation { feedbackMessage = "\(dest.name) \u{2190} \(label) \u{b7} \(tokenLabel)" }
-            } catch {
-                withAnimation { feedbackMessage = "Export failed: \(error.localizedDescription)" }
-            }
-        } else {
-            copyToClipboard(context, message: "Copied \(label) \u{b7} \(tokenLabel)")
-        }
-    }
-
-    private func copyToClipboard(_ text: String, message: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        clipboardClearTrigger += 1
-        withAnimation { feedbackMessage = message }
-    }
-
-    private func importPDFFromDisk() {
+    private func importFromDisk() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf]
+        var types: [UTType] = [.pdf, .commaSeparatedText]
+        if let docxType = UTType(filenameExtension: "docx") { types.append(docxType) }
+        if let docType = UTType(filenameExtension: "doc") { types.append(docType) }
+        panel.allowedContentTypes = types
         panel.allowsMultipleSelection = true
-        panel.message = "Select PDF files to import as Markdown"
+        panel.message = "Select files to import as Markdown (PDF, CSV, DOCX)"
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
-            if let created = fm.importPDF(from: url, collection: activeFile?.collection) {
+            if let created = fm.importFile(from: url, collection: activeFile?.collection) {
                 selectFile(created)
-                withAnimation { feedbackMessage = "Imported \(created.name) from PDF" }
+                feedService.showFeedback("Imported \(created.name)")
             }
+        }
+    }
+
+    private func scanFolderFromDisk() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a folder to scan for .md files"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let count = fm.scanFolder(at: url)
+        if count > 0 {
+            feedService.showFeedback("Imported \(count) file\(count == 1 ? "" : "s") from \(url.lastPathComponent)")
+        }
+    }
+
+    private func exportFeedToDisk() {
+        let targets = feedTargets
+        guard !targets.isEmpty else { return }
+        let context = fm.feedContext(files: targets)
+        let panel = NSSavePanel()
+        let label = targets.count == 1 ? targets[0].name : "context-\(targets.count)-files"
+        panel.nameFieldStringValue = "\(label).md"
+        panel.allowedContentTypes = [.plainText]
+        panel.message = "Export context as Markdown"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try context.write(to: url, atomically: true, encoding: .utf8)
+            feedService.showFeedback("Exported to \(url.lastPathComponent)")
+        } catch {
+            feedService.showFeedback("Export failed: \(error.localizedDescription)")
         }
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
-        let validExtensions: Set<String> = ["md", "pdf"]
+        let validExtensions: Set<String> = ["md", "pdf", "csv", "docx", "doc"]
         var hasValidProvider = false
         for provider in providers {
             guard provider.hasItemConformingToTypeIdentifier("public.file-url") else { continue }

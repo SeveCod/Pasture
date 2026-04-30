@@ -1,6 +1,6 @@
 # Pasture — Feed your AI
 
-A minimal macOS app for managing Markdown context files to feed to AI assistants like Claude.
+A native macOS app for managing Markdown context files and querying AI models directly. Manages `.md` files in `~/.pasture/`, wraps them as XML context for AI assistants, and includes a built-in Ask mode for sending questions to Anthropic or OpenRouter APIs with streaming responses.
 
 ## Requirements
 
@@ -21,23 +21,27 @@ open Package.swift
 
 ## What it does
 
-Pasture manages `.md` files in `~/.pasture/` and makes it fast to compose context for AI sessions.
-
 ### Library (sidebar)
 - Lists all `.md` files in `~/.pasture/` with name and modification date
+- Collections: organize files in subdirectories inside `~/.pasture/`
 - Multi-select with `Cmd+click`
+- Sort by date (default) or name
 - Drag & drop `.md` or `.pdf` files from Finder to import them
+- Search bar filtering by file name and content
 
-### Editor (right panel)
-- Edit selected file in a monospaced TextEditor
-- Auto-save with 1-second debounce on every change
-- `Cmd+S` to force save immediately
+### Preview (right panel)
+- Read-only Markdown preview of the selected file
+- Text selection enabled
+- "Open in Editor" button delegates editing to the system default app
+- Pasture watches the filesystem and reflects external changes automatically
 
-### New from Clipboard — `Cmd+Shift+V`
-Reads the clipboard, asks for a file name, and saves a new `.md` in `~/.pasture/`.
+### Ask mode (right panel)
+Toggle with `Cmd+Shift+A` or the toolbar button. Select files, type a question, and receive a streaming response from Anthropic or OpenRouter.
 
-### Merge
-With multiple files selected, the **Merge** toolbar button concatenates them (separated by `\n---\n`) into a new file.
+- Context bar: file count, token estimate, model name, cost estimate
+- Streaming responses with Markdown rendering
+- Action bar: Copy, Save to Pasture, Export as `.md`
+- Configure provider, model, and API key in Settings → AI
 
 ### Feed — toolbar leaf button
 Copies the active (or selected) file(s) to the clipboard wrapped for Claude.
@@ -61,11 +65,14 @@ Multiple files:
 
 If a file contains template variables, Pasture prompts for their values before copying.
 
-### Import PDF
-Toolbar button or drag & drop. Extracts text via PDFKit (native, zero dependencies) and saves as `.md`. Works with any digitally-generated PDF (reports, papers, manuals). Scanned PDFs without OCR layer return empty text.
+### Scan Folder
+Toolbar button. Recursively scans a directory for `.md` files and imports them into a new collection.
 
-### Search
-The search bar filters by file name and content in real time.
+### Export
+Toolbar button. Saves the feed context as `.md` to any location via save dialog.
+
+### Import PDF
+Toolbar button or drag & drop. Extracts text via PDFKit (native, zero dependencies) and saves as `.md`. Scanned PDFs without OCR layer return empty text.
 
 ## Template syntax
 
@@ -74,48 +81,62 @@ Any `.md` file can declare variables using double-brace syntax. When you hit Fee
 ```
 {{VARIABLE}}              — declares a variable, prompted before Feed
 {{VAR=default}}           — declares a variable with a default value
+{{#if VAR}}...{{/if}}     — conditional block
+{{#unless VAR}}...{{/unless}} — inverse conditional
+{{#each ITEMS}}...{{/each}}   — loop over comma-separated list
 ```
-
-Variable names must start with a letter or underscore and may contain letters, numbers, and underscores (`[A-Za-z_][A-Za-z0-9_]*`).
-
-If the same variable appears more than once in a file, it is only prompted once. The default value of the first occurrence wins.
-
-Example: a file containing
-
-```
-Hello {{NAME}}, welcome to {{PROJECT=Pasture}}.
-```
-
-prompts for `NAME` (no default) and `PROJECT` (default: `Pasture`).
 
 ## Token estimation
 
-The token counter in the toolbar is an approximation based on a heuristic of ~4 characters per token. It is not the actual Claude tokenizer. It is accurate enough for rough sizing but may diverge for code-heavy files or non-English content.
+The token counter is a heuristic (~4 chars/token). Not the actual tokenizer — accurate enough for rough sizing.
 
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
+| `Cmd+Shift+A` | Toggle Ask mode |
 | `Cmd+Shift+V` | Create new file from clipboard |
-| `Cmd+S` | Force save current file |
+| `Cmd+E` | Open file in default editor |
+| `Cmd+,` | Settings (Export destinations, AI config) |
 | Drag & drop | Import `.md` or `.pdf` files |
 
 ## Structure
 
 ```
-Sources/Pasture/
-├── PastureApp.swift      — App entry point, menu commands
-├── ContentView.swift     — Main UI (sidebar, editor, toolbar)
-├── MDFileManager.swift   — File model and I/O operations
-├── DesignTokens.swift    — Design system (colors, typography, layout)
-├── TemplateEngine.swift  — Template variable extraction and rendering
-└── TokenEstimator.swift  — Heuristic token counter
+Sources/
+├── PastureKit/                — Testable library (pure logic, no UI)
+│   ├── TemplateEngine.swift   — Template parser and renderer
+│   ├── TokenEstimator.swift   — Heuristic token counter + cost estimation
+│   ├── FilenameSanitizer.swift
+│   ├── StringExtensions.swift — xmlEscapedAttribute
+│   ├── ExportDestination.swift
+│   ├── ExportSettings.swift
+│   ├── AIProvider.swift       — AIProviderKind enum, AIModel catalog
+│   ├── AISettings.swift       — AI config persistence (UserDefaults + Keychain)
+│   ├── AIClient.swift         — Streaming AI client actor (Anthropic/OpenRouter)
+│   ├── KeychainStore.swift    — macOS Keychain wrapper
+│   └── SSEParser.swift        — Server-Sent Events parser
+├── Pasture/                   — SwiftUI app (executable)
+│   ├── PastureApp.swift       — App entry, scenes, menu commands
+│   ├── ContentView.swift      — Navigation, preview/ask toggle, toolbar
+│   ├── FeedService.swift      — Shared feed logic (clipboard, export, templates)
+│   ├── AskView.swift          — Ask panel UI
+│   ├── AskViewModel.swift     — Ask state management
+│   ├── SidebarView.swift      — File list with collections
+│   ├── FeedAction.swift       — Feed button and template sheet
+│   ├── MarkdownPreviewView.swift
+│   ├── MenuBarView.swift      — Menu bar popover
+│   ├── MDFileManager.swift    — File I/O and directory watching
+│   ├── SettingsView.swift     — Export + AI settings tabs
+│   ├── DesignTokens.swift     — Design system
+│   └── AppDelegate.swift
+└── Tests/PastureKitTests/     — 140 tests (Swift Testing framework)
 ```
 
 No CoreData, no SwiftData, no external dependencies.
 
 ## Release
 
-**Current version: 1.0.0** (2026-04-29)
+**Current version: 1.2.0** (2026-04-29)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history of changes.

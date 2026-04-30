@@ -7,6 +7,41 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-29
+
+### Added
+
+- **Feed & Ask**: ask questions about selected files directly from the app. Responses stream in real time from Anthropic or OpenRouter APIs.
+- AI Settings tab in Preferences (Cmd+,): configure provider, model, and API key.
+- API keys stored securely in macOS Keychain via `Security.framework`.
+- Toggle between read-only preview and Ask mode with Cmd+Shift+A.
+- Context bar showing file count, token estimate, model, and cost estimate before sending.
+- Action bar after response: Copy, Save to Pasture, Export as `.md`.
+- Scan Folder toolbar button: recursively import `.md` files from any directory into a new collection.
+- Export toolbar button: save feed context as `.md` to any location via NSSavePanel.
+- New PastureKit components: `AIClient` (streaming actor), `AIProvider`/`AIModel` (provider catalog), `AISettings` (persistence), `KeychainStore` (Keychain wrapper), `SSEParser` (Server-Sent Events).
+- `TokenEstimator.estimatedCost()` and `formattedCost()` for pre-send cost display.
+- View menu with "Toggle Ask Mode" command.
+- 37 new tests (140 total): KeychainStore (8), AIProvider (6), AISettings (7), SSEParser (10), TokenEstimator cost methods (6).
+
+### Changed
+
+- Detail panel now toggles between `MarkdownPreviewView` and `AskView` via `DetailMode` enum.
+- `ContentView` gains `@StateObject askViewModel` (survives mode toggle).
+- `SettingsView` converted to `TabView` with Export and AI tabs.
+- `AskViewModel.saveResponse` uses `FilenameSanitizer` for consistent name sanitization.
+- `KeychainStore` items created with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` for device-bound security.
+- `AIClient` URLs extracted to static constants (no force-unwrap).
+- `mapHTTPError` extracts `Retry-After` header on 429 responses; truncates error messages to 200 chars.
+
+### Security
+
+- API keys stored in macOS Keychain (not UserDefaults or plaintext).
+- Keychain items restricted to `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+- All network calls use HTTPS with default ATS (TLS 1.2+).
+- Error response bodies limited to 2000 bytes to prevent memory abuse.
+- Context size validated against model context window before sending.
+
 ## [1.1.0] - 2026-04-29
 
 ### Added
@@ -97,6 +132,7 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/SeveCod/Pasture/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/SeveCod/Pasture/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/SeveCod/Pasture/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/SeveCod/Pasture/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/SeveCod/Pasture/releases/tag/v1.0.0

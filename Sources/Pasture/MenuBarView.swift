@@ -8,13 +8,8 @@ struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var selectedFiles: Set<MDFile> = []
     @State private var searchText = ""
-    @State private var feedbackMessage: String?
-    @State private var showTemplateSheet = false
-    @State private var templateVariables: [TemplateVariable] = []
-    @State private var pendingFeedTargets: [MDFile] = []
-    @State private var pendingDestination: ExportDestination?
-    @State private var clipboardClearTrigger: Int = 0
     @State private var exportDestinations: [ExportDestination] = ExportSettings.loadDestinations()
+    @StateObject private var feedService = FeedService()
 
     private var filteredFiles: [MDFile] {
         guard !searchText.isEmpty else { return fm.files }
@@ -45,25 +40,16 @@ struct MenuBarView: View {
         }
         .frame(width: 320)
         .overlay(alignment: .bottom) { feedbackOverlay }
-        .sheet(isPresented: $showTemplateSheet) {
+        .sheet(isPresented: $feedService.showTemplateSheet) {
             TemplateSheet(
-                variables: $templateVariables,
+                variables: $feedService.templateVariables,
                 totalTokens: totalTokens,
-                onCancel: { showTemplateSheet = false },
-                onConfirm: confirmTemplateFeed
+                onCancel: { feedService.showTemplateSheet = false },
+                onConfirm: { feedService.confirmTemplateFeed(fm: fm) }
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: ExportSettings.didChangeNotification)) { _ in
             exportDestinations = ExportSettings.loadDestinations()
-        }
-        .task(id: clipboardClearTrigger) {
-            guard clipboardClearTrigger > 0 else { return }
-            let savedChangeCount = NSPasteboard.general.changeCount
-            try? await Task.sleep(for: .seconds(60))
-            guard !Task.isCancelled,
-                  NSPasteboard.general.changeCount == savedChangeCount else { return }
-            NSPasteboard.general.clearContents()
-            withAnimation { feedbackMessage = "Clipboard cleared" }
         }
     }
 
@@ -73,6 +59,7 @@ struct MenuBarView: View {
         HStack {
             Image(systemName: "leaf.fill")
                 .foregroundStyle(LinearGradient.pastureBrand)
+                .accessibilityHidden(true)
             Text("Pasture")
                 .font(.pastureSheetHeading)
             Spacer()
@@ -80,12 +67,28 @@ struct MenuBarView: View {
                 openWindow(id: "main")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             } label: {
-                Image(systemName: "macwindow")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                HStack(spacing: 4) {
+                    Image(systemName: "macwindow")
+                        .font(.system(size: 11))
+                    Text("Open")
+                        .font(.system(.caption, weight: .medium))
+                }
+                .foregroundStyle(Color.pastureAccent)
             }
             .buttonStyle(.plain)
             .help("Open main window")
+            .accessibilityLabel("Open main window")
+
+            Button {
+                NSApplication.shared.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+            }
+            .buttonStyle(.plain)
+            .help("Quit Pasture")
+            .accessibilityLabel("Quit Pasture")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -108,6 +111,7 @@ struct MenuBarView: View {
                         .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 12)
@@ -191,6 +195,7 @@ struct MenuBarView: View {
         HStack(spacing: 4) {
             Image(systemName: "leaf.fill")
                 .font(.system(size: 10))
+                .accessibilityHidden(true)
             Text("Feed \(TokenEstimator.formatted(totalTokens))")
                 .font(.system(.caption, weight: .medium))
         }
@@ -203,6 +208,8 @@ struct MenuBarView: View {
                 : AnyShapeStyle(LinearGradient.pastureFeedButton)
         )
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Feed \(TokenEstimator.formatted(totalTokens)) tokens")
     }
 
     // MARK: - Feed Actions
@@ -213,61 +220,14 @@ struct MenuBarView: View {
     }
 
     private func executeFeed(destination: ExportDestination?) {
-        let targets = feedTargets
-        guard !targets.isEmpty else { return }
-
-        let allVars = TemplateEngine.extractVariables(from: targets.map(\.content).joined(separator: "\n"))
-        if !allVars.isEmpty {
-            templateVariables = allVars
-            pendingFeedTargets = targets
-            pendingDestination = destination
-            showTemplateSheet = true
-            return
-        }
-
-        deliverFeed(context: fm.feedContext(files: targets), targets: targets, destination: destination)
-    }
-
-    private func confirmTemplateFeed() {
-        var rendered: [URL: String] = [:]
-        for file in pendingFeedTargets {
-            rendered[file.url] = TemplateEngine.render(file.content, with: templateVariables)
-        }
-        deliverFeed(
-            context: fm.feedContext(files: pendingFeedTargets, renderedContents: rendered),
-            targets: pendingFeedTargets,
-            destination: pendingDestination
-        )
-        showTemplateSheet = false
-        pendingFeedTargets = []
-        templateVariables = []
-        pendingDestination = nil
-    }
-
-    private func deliverFeed(context: String, targets: [MDFile], destination: ExportDestination?) {
-        let label = targets.count == 1 ? targets[0].name : "\(targets.count) files"
-        let tokens = TokenEstimator.formatted(fm.totalTokens(for: targets))
-
-        if let dest = destination {
-            do {
-                try fm.exportToFile(context, to: dest)
-                withAnimation { feedbackMessage = "\(dest.name) \u{2190} \(label) \u{b7} ~\(tokens) tk" }
-            } catch {
-                withAnimation { feedbackMessage = "Export failed: \(error.localizedDescription)" }
-            }
-        } else {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(context, forType: .string)
-            clipboardClearTrigger += 1
-            withAnimation { feedbackMessage = "Copied \(label) \u{b7} ~\(tokens) tk" }
-        }
+        feedService.executeFeed(targets: feedTargets, destination: destination, fm: fm)
     }
 
     // MARK: - Feedback
 
     @ViewBuilder
     private var feedbackOverlay: some View {
-        if let msg = feedbackMessage {
+        if let msg = feedService.feedbackMessage {
             Text(msg)
                 .font(.caption)
                 .padding(.horizontal, 10)
@@ -275,10 +235,6 @@ struct MenuBarView: View {
                 .background(.regularMaterial, in: Capsule())
                 .padding(.bottom, 40)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-                .task(id: msg) {
-                    try? await Task.sleep(for: .seconds(2))
-                    withAnimation { feedbackMessage = nil }
-                }
         }
     }
 }

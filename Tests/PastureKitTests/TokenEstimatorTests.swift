@@ -96,4 +96,44 @@ struct TokenEstimatorTests {
     func formattedLargeNumber() {
         #expect(TokenEstimator.formatted(128000) == "128.0k")
     }
+
+    // MARK: - estimatedCost
+
+    @Test("Zero tokens cost is zero")
+    func estimatedCostZero() {
+        let model = AIModel(id: "test", displayName: "Test", provider: .anthropic,
+                            contextWindow: 200_000, inputCostPer1M: 3.0, outputCostPer1M: 15.0)
+        let cost = TokenEstimator.estimatedCost(inputTokens: 0, outputTokens: 0, model: model)
+        #expect(cost == 0.0)
+    }
+
+    @Test("Cost calculation is correct")
+    func estimatedCostCalculation() {
+        let model = AIModel(id: "test", displayName: "Test", provider: .anthropic,
+                            contextWindow: 200_000, inputCostPer1M: 3.0, outputCostPer1M: 15.0)
+        let cost = TokenEstimator.estimatedCost(inputTokens: 1_000_000, outputTokens: 1_000_000, model: model)
+        #expect(cost == 18.0)
+    }
+
+    // MARK: - formattedCost
+
+    @Test("Zero cost formatted as $0.00")
+    func formattedCostZero() {
+        #expect(TokenEstimator.formattedCost(0) == "$0.00")
+    }
+
+    @Test("Very small cost formatted as <$0.001")
+    func formattedCostTiny() {
+        #expect(TokenEstimator.formattedCost(0.0001) == "<$0.001")
+    }
+
+    @Test("Normal cost formatted with 3 decimals")
+    func formattedCostNormal() {
+        #expect(TokenEstimator.formattedCost(0.003) == "~$0.003")
+    }
+
+    @Test("Large cost formatted with 2 decimals")
+    func formattedCostLarge() {
+        #expect(TokenEstimator.formattedCost(0.15) == "~$0.15")
+    }
 }

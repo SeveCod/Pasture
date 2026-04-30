@@ -34,4 +34,17 @@ public enum TokenEstimator {
         }
         return "\(tokens)"
     }
+
+    public static func estimatedCost(inputTokens: Int, outputTokens: Int, model: AIModel) -> Double {
+        let inCost = Double(inputTokens) * model.inputCostPer1M / 1_000_000
+        let outCost = Double(outputTokens) * model.outputCostPer1M / 1_000_000
+        return inCost + outCost
+    }
+
+    public static func formattedCost(_ usd: Double) -> String {
+        if usd <= 0 { return "$0.00" }
+        if usd < 0.001 { return "<$0.001" }
+        if usd >= 0.10 { return String(format: "~$%.2f", usd) }
+        return String(format: "~$%.3f", usd)
+    }
 }

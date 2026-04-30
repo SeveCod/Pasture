@@ -13,6 +13,7 @@ struct MenuBarFileRow: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isSelected ? Color.pastureAccent : Color.pastureTextTertiary(colorScheme))
                     .font(.system(size: 13))
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(file.name)
@@ -38,5 +39,8 @@ struct MenuBarFileRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(file.name)\(file.collection.map { ", \($0)" } ?? ""), \(TokenEstimator.formatted(file.tokens)) tokens")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityHint("Double-tap to toggle selection")
     }
 }

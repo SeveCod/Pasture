@@ -25,6 +25,12 @@ struct PastureApp: App {
                 }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
             }
+            CommandMenu("View") {
+                Button("Toggle Ask Mode") {
+                    NotificationCenter.default.post(name: .toggleAskMode, object: nil)
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+            }
         }
 
         MenuBarExtra("Pasture", systemImage: "leaf.fill") {
@@ -42,4 +48,5 @@ struct PastureApp: App {
 extension Notification.Name {
     static let pasteFromClipboard = Notification.Name("pasteFromClipboard")
     static let openInEditor = Notification.Name("openInEditor")
+    static let toggleAskMode = Notification.Name("toggleAskMode")
 }

@@ -3,6 +3,20 @@ import AppKit
 import PastureKit
 
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            ExportSettingsTab()
+                .tabItem { Label("Export", systemImage: "square.and.arrow.up") }
+            AISettingsTab()
+                .tabItem { Label("AI", systemImage: "brain") }
+        }
+        .frame(minWidth: 560, minHeight: 280)
+    }
+}
+
+// MARK: - Export Tab
+
+private struct ExportSettingsTab: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var destinations: [ExportDestination] = ExportSettings.loadDestinations()
     @State private var defaultID: UUID? = ExportSettings.defaultDestinationID()
@@ -37,7 +51,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 560, minHeight: 200)
     }
 
     @ViewBuilder
@@ -53,6 +66,8 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .help(defaultID == dest.wrappedValue.id ? "Default destination" : "Set as default")
+            .accessibilityLabel(defaultID == dest.wrappedValue.id ? "Remove as default destination" : "Set as default destination")
+            .accessibilityValue(defaultID == dest.wrappedValue.id ? "Default" : "Not default")
 
             TextField("Name", text: dest.name)
                 .frame(width: 120)
@@ -69,6 +84,7 @@ struct SettingsView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Color.pastureError)
                     .help("Directory not writable")
+                    .accessibilityLabel("Warning: Directory not writable")
             }
 
             Button("Choose\u{2026}") { pickPath(for: dest.wrappedValue.id) }
@@ -79,6 +95,8 @@ struct SettingsView: View {
                     .foregroundStyle(Color.pastureError)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Delete destination")
+            .accessibilityHint("Removes this export destination")
         }
     }
 
@@ -106,5 +124,168 @@ struct SettingsView: View {
     private func persist() {
         ExportSettings.saveDestinations(destinations)
         NotificationCenter.default.post(name: ExportSettings.didChangeNotification, object: nil)
+    }
+}
+
+// MARK: - AI Tab
+
+private struct AISettingsTab: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var selectedProvider: AIProviderKind = AISettings.loadProvider()
+    @State private var selectedModelID: String = AISettings.loadModelID()
+    @State private var apiKeyInput = ""
+    @State private var keySaved = false
+    @State private var testResult: String?
+    @State private var isTesting = false
+
+    private var availableModels: [AIModel] {
+        AIModel.models(for: selectedProvider)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Provider", selection: $selectedProvider) {
+                    Text("Anthropic").tag(AIProviderKind.anthropic)
+                    Text("OpenRouter").tag(AIProviderKind.openRouter)
+                }
+                .onChange(of: selectedProvider) { _, newValue in
+                    AISettings.saveProvider(newValue, to: .standard)
+                    let models = AIModel.models(for: newValue)
+                    if !models.contains(where: { $0.id == selectedModelID }) {
+                        selectedModelID = models.first?.id ?? AIModel.defaultModelID
+                        AISettings.saveModelID(selectedModelID, to: .standard)
+                    }
+                    apiKeyInput = ""
+                    keySaved = false
+                    postChange()
+                }
+
+                HStack {
+                    SecureField("API Key", text: $apiKeyInput)
+                        .textFieldStyle(.roundedBorder)
+
+                    if keySaved {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.pastureSuccess)
+                            .accessibilityLabel("API key saved successfully")
+                    }
+
+                    Button("Save") {
+                        guard !apiKeyInput.isEmpty else { return }
+                        do {
+                            try AISettings.saveAPIKey(apiKeyInput, for: selectedProvider)
+                            keySaved = true
+                        } catch {
+                            keySaved = false
+                        }
+                        postChange()
+                    }
+                    .disabled(apiKeyInput.isEmpty)
+                }
+
+                if AISettings.loadAPIKey(for: selectedProvider) != nil && apiKeyInput.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "key.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.pastureSuccess)
+                            .accessibilityHidden(true)
+                        Text("Key saved in Keychain")
+                            .font(.caption)
+                            .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+                        Spacer()
+                        Button("Remove", role: .destructive) {
+                            AISettings.deleteAPIKey(for: selectedProvider)
+                            keySaved = false
+                            postChange()
+                        }
+                        .font(.caption)
+                    }
+                }
+            } header: {
+                Text("API Configuration")
+            }
+
+            Section {
+                Picker("Model", selection: $selectedModelID) {
+                    ForEach(availableModels) { model in
+                        Text(model.displayName).tag(model.id)
+                    }
+                }
+                .onChange(of: selectedModelID) { _, newValue in
+                    AISettings.saveModelID(newValue, to: .standard)
+                    postChange()
+                }
+
+                if let model = AIModel.model(byID: selectedModelID) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Context: \(TokenEstimator.formatted(model.contextWindow)) tokens")
+                                .font(.caption)
+                            Text("Input: $\(String(format: "%.2f", model.inputCostPer1M))/1M tokens")
+                                .font(.caption)
+                            Text("Output: $\(String(format: "%.2f", model.outputCostPer1M))/1M tokens")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+                        Spacer()
+                    }
+                }
+            } header: {
+                Text("Model")
+            }
+
+            Section {
+                Button {
+                    testConnection()
+                } label: {
+                    HStack {
+                        if isTesting {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(isTesting ? "Testing\u{2026}" : "Test Connection")
+                    }
+                }
+                .disabled(AISettings.loadAPIKey(for: selectedProvider) == nil || isTesting)
+
+                if let result = testResult {
+                    Text(result)
+                        .font(.caption)
+                        .foregroundStyle(result.hasPrefix("\u{2714}") ? Color.pastureSuccess : Color.pastureError)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func testConnection() {
+        guard let apiKey = AISettings.loadAPIKey(for: selectedProvider) else { return }
+        isTesting = true
+        testResult = nil
+
+        let model = AIModel.model(byID: selectedModelID) ?? AIModel.defaultModels[0]
+        let client = AIClient()
+
+        Task {
+            var gotResponse = false
+            do {
+                let stream = await client.ask(question: "Reply with: OK", context: "", model: model, apiKey: apiKey)
+                for try await _ in stream {
+                    gotResponse = true
+                    break
+                }
+                testResult = gotResponse ? "\u{2714} Connection successful" : "\u{2714} Connected (empty response)"
+            } catch let error as AIClientError {
+                testResult = "\u{2718} \(error.localizedDescription)"
+            } catch {
+                testResult = "\u{2718} \(error.localizedDescription)"
+            }
+            isTesting = false
+        }
+    }
+
+    private func postChange() {
+        NotificationCenter.default.post(name: AISettings.didChangeNotification, object: nil)
     }
 }
