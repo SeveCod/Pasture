@@ -8,18 +8,21 @@ final class AskViewModel: ObservableObject {
     @Published var responseText = ""
     @Published var isStreaming = false
     @Published var error: AIClientError?
-    @Published var selectedProvider: AIProviderKind = AISettings.loadProvider()
-    @Published var selectedModelID: String = AISettings.loadModelID()
+    @Published private(set) var selectedProvider: AIProviderKind = AISettings.loadProvider()
+    @Published private(set) var selectedModelID: String = AISettings.loadModelID()
+    @Published private(set) var hasAPIKey: Bool = false
+
+    static let responseFilenamePrefixLength = 40
 
     private let client = AIClient()
     private var streamTask: Task<Void, Never>?
 
-    var resolvedModel: AIModel {
-        AIModel.resolve(id: selectedModelID, preferredProvider: selectedProvider)
+    init() {
+        hasAPIKey = AISettings.loadAPIKey(for: selectedProvider) != nil
     }
 
-    var hasAPIKey: Bool {
-        AISettings.loadAPIKey(for: selectedProvider) != nil
+    var resolvedModel: AIModel {
+        AIModel.resolve(id: selectedModelID, preferredProvider: selectedProvider)
     }
 
     var canSend: Bool {
@@ -27,13 +30,11 @@ final class AskViewModel: ObservableObject {
     }
 
     func inputTokenEstimate(for contextTokens: Int) -> Int {
-        contextTokens + TokenEstimator.estimate(question)
+        TokenEstimator.inputTokenEstimate(contextTokens: contextTokens, question: question)
     }
 
     func costEstimate(for contextTokens: Int) -> String {
-        let input = inputTokenEstimate(for: contextTokens)
-        let cost = TokenEstimator.estimatedCost(inputTokens: input, outputTokens: 1024, model: resolvedModel)
-        return TokenEstimator.formattedCost(cost)
+        TokenEstimator.costEstimate(contextTokens: contextTokens, question: question, model: resolvedModel)
     }
 
     func send(context: String, contextTokens: Int) {
@@ -93,7 +94,7 @@ final class AskViewModel: ObservableObject {
 
     func saveResponse(to fm: MDFileManager, collection: String?) {
         guard !responseText.isEmpty else { return }
-        let prefix = String(question.prefix(30))
+        let prefix = String(question.prefix(Self.responseFilenamePrefixLength))
         let sanitized = FilenameSanitizer.sanitize(prefix)
         let name = sanitized.isEmpty ? "ask-response" : "ask-\(sanitized)"
         _ = fm.create(name: name, content: responseText, collection: collection)
@@ -102,5 +103,6 @@ final class AskViewModel: ObservableObject {
     func reloadSettings() {
         selectedProvider = AISettings.loadProvider()
         selectedModelID = AISettings.loadModelID()
+        hasAPIKey = AISettings.loadAPIKey(for: selectedProvider) != nil
     }
 }

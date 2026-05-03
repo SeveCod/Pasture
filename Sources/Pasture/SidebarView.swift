@@ -84,18 +84,13 @@ struct SidebarView: View {
         }
     }
 
-    private var visibleCollections: [String] {
-        if fm.searchQuery.isEmpty {
-            return fm.collections
-        }
-        return fm.collections.filter { collection in
-            fm.filteredFiles.contains { $0.collection == collection }
-        }
-    }
-
     var fileList: some View {
         let sorted = sortedFiles
-        let uncategorized = sorted.filter { $0.collection == nil }
+        let grouped = Dictionary(grouping: sorted, by: \.collection)
+        let uncategorized = grouped[nil] ?? []
+        let visibleCollns = fm.searchQuery.isEmpty
+            ? fm.collections
+            : fm.collections.filter { grouped[$0] != nil }
         return List(selection: $selectedFiles) {
             if !uncategorized.isEmpty {
                 Section {
@@ -109,8 +104,8 @@ struct SidebarView: View {
                 }
             }
 
-            ForEach(visibleCollections, id: \.self) { collectionName in
-                let collectionFiles = sorted.filter { $0.collection == collectionName }
+            ForEach(visibleCollns, id: \.self) { collectionName in
+                let collectionFiles = grouped[collectionName] ?? []
                 Section {
                     ForEach(collectionFiles) { file in
                         fileRow(file: file)
@@ -194,9 +189,10 @@ struct SidebarView: View {
 
     private var selectionSummary: some View {
         HStack {
-            let count = fm.filteredFiles.count
+            let filtered = fm.filteredFiles
+            let count = filtered.count
             let totalTokens = fm.totalTokens(
-                for: selectedFiles.isEmpty ? fm.filteredFiles : Array(selectedFiles)
+                for: selectedFiles.isEmpty ? filtered : Array(selectedFiles)
             )
             let label = selectedFiles.isEmpty ? "\(count) files" : "\(selectedFiles.count) selected"
 

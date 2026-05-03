@@ -21,7 +21,8 @@ struct MenuBarView: View {
     }
 
     private var feedTargets: [MDFile] {
-        fm.files.filter { selectedFiles.contains($0) }
+        guard !selectedFiles.isEmpty else { return [] }
+        return fm.files.filter { selectedFiles.contains($0) }
     }
 
     private var totalTokens: Int {
@@ -44,7 +45,7 @@ struct MenuBarView: View {
             TemplateSheet(
                 variables: $feedService.templateVariables,
                 totalTokens: totalTokens,
-                onCancel: { feedService.showTemplateSheet = false },
+                onCancel: { feedService.cancelTemplateFeed() },
                 onConfirm: { feedService.confirmTemplateFeed(fm: fm) }
             )
         }
@@ -144,7 +145,8 @@ struct MenuBarView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack {
+        let targets = feedTargets
+        return HStack {
             if !selectedFiles.isEmpty {
                 Text("\(selectedFiles.count) selected")
                     .font(.pastureStatusBar)
@@ -157,67 +159,20 @@ struct MenuBarView: View {
 
             Spacer()
 
-            feedButtonContent
+            FeedButton(
+                targets: targets,
+                totalTokens: fm.totalTokens(for: targets),
+                destinations: exportDestinations,
+                compact: true,
+                onClipboard: { executeFeed(destination: nil) },
+                onExport: { dest in executeFeed(destination: dest) }
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    @ViewBuilder
-    private var feedButtonContent: some View {
-        let isDisabled = selectedFiles.isEmpty
-
-        if exportDestinations.isEmpty {
-            Button(action: { executeFeed(destination: nil) }) {
-                feedButtonLabel
-            }
-            .buttonStyle(.plain)
-            .disabled(isDisabled)
-        } else {
-            Menu {
-                Button("Copy to Clipboard") { executeFeed(destination: nil) }
-                Divider()
-                ForEach(exportDestinations) { dest in
-                    Button("Export to \(dest.name)") { executeFeed(destination: dest) }
-                }
-            } label: {
-                feedButtonLabel
-            } primaryAction: {
-                let defaultDest = resolveDefaultDestination()
-                executeFeed(destination: defaultDest)
-            }
-            .menuStyle(.borderlessButton)
-            .disabled(isDisabled)
-        }
-    }
-
-    private var feedButtonLabel: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "leaf.fill")
-                .font(.system(size: 10))
-                .accessibilityHidden(true)
-            Text("Feed \(TokenEstimator.formatted(totalTokens))")
-                .font(.system(.caption, weight: .medium))
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(
-            selectedFiles.isEmpty
-                ? AnyShapeStyle(Color.pastureTextTertiaryLight.opacity(0.3))
-                : AnyShapeStyle(LinearGradient.pastureFeedButton)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Feed \(TokenEstimator.formatted(totalTokens)) tokens")
-    }
-
     // MARK: - Feed Actions
-
-    private func resolveDefaultDestination() -> ExportDestination? {
-        guard let defaultID = ExportSettings.defaultDestinationID() else { return nil }
-        return exportDestinations.first { $0.id == defaultID }
-    }
 
     private func executeFeed(destination: ExportDestination?) {
         feedService.executeFeed(targets: feedTargets, destination: destination, fm: fm)
@@ -228,13 +183,7 @@ struct MenuBarView: View {
     @ViewBuilder
     private var feedbackOverlay: some View {
         if let msg = feedService.feedbackMessage {
-            Text(msg)
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(.regularMaterial, in: Capsule())
-                .padding(.bottom, 40)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+            FeedbackToast(message: msg)
         }
     }
 }

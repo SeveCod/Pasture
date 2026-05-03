@@ -5,9 +5,13 @@ struct FeedButton: View {
     let targets: [MDFile]
     let totalTokens: Int
     let destinations: [ExportDestination]
+    var compact: Bool = false
     let onClipboard: () -> Void
     let onExport: (ExportDestination) -> Void
     @State private var hover = false
+
+    private var feedLabel: String { "Feed \(TokenEstimator.formatted(totalTokens))" }
+    private var feedAccessibilityLabel: String { "\(feedLabel) tokens" }
 
     var body: some View {
         let isDisabled = targets.isEmpty
@@ -46,11 +50,43 @@ struct FeedButton: View {
 
     @ViewBuilder
     private func buttonLabel(isDisabled: Bool) -> some View {
+        if compact {
+            compactLabel(isDisabled: isDisabled)
+        } else {
+            toolbarLabel(isDisabled: isDisabled)
+        }
+    }
+
+    @ViewBuilder
+    private func compactLabel(isDisabled: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "leaf.fill")
+                .font(.system(size: 10))
+                .accessibilityHidden(true)
+            Text(feedLabel)
+                .font(.system(.caption, weight: .medium))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(
+            isDisabled
+                ? AnyShapeStyle(Color.pastureTextTertiaryLight.opacity(0.3))
+                : AnyShapeStyle(LinearGradient.pastureFeedButton)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(feedAccessibilityLabel)
+    }
+
+    @ViewBuilder
+    private func toolbarLabel(isDisabled: Bool) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "leaf.fill")
+                .font(.body)
                 .rotationEffect(.degrees(15))
                 .accessibilityHidden(true)
-            Text("Feed \(TokenEstimator.formatted(totalTokens))")
+            Text(feedLabel)
                 .font(.pastureToolbarLabel)
         }
         .foregroundStyle(.white)
@@ -65,7 +101,7 @@ struct FeedButton: View {
         .scaleEffect(hover && !isDisabled ? 1.02 : 1.0)
         .animation(.easeInOut(duration: PastureEffects.animationQuick), value: hover)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Feed \(TokenEstimator.formatted(totalTokens)) tokens")
+        .accessibilityLabel(feedAccessibilityLabel)
     }
 }
 

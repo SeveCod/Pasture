@@ -41,6 +41,14 @@ final class FeedService: ObservableObject {
             destination: pendingDestination,
             fm: fm
         )
+        resetPendingFeed()
+    }
+
+    func cancelTemplateFeed() {
+        resetPendingFeed()
+    }
+
+    private func resetPendingFeed() {
         showTemplateSheet = false
         pendingFeedTargets = []
         templateVariables = []
@@ -83,7 +91,7 @@ final class FeedService: ObservableObject {
         feedbackDismissTask?.cancel()
         withAnimation { feedbackMessage = message }
         feedbackDismissTask = Task {
-            try? await Task.sleep(for: .seconds(2.5))
+            try? await Task.sleep(for: .seconds(PastureLayout.toastDismissDelay))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.3)) { feedbackMessage = nil }
         }

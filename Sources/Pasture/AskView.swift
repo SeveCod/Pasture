@@ -26,7 +26,7 @@ struct AskView: View {
         }
         .overlay(alignment: .bottom) {
             if let msg = savedFeedback {
-                saveFeedbackToast(msg)
+                FeedbackToast(message: msg)
             }
         }
     }
@@ -127,22 +127,21 @@ struct AskView: View {
         }
     }
 
-    @ViewBuilder
     private var responseContent: some View {
-        if let attributed = try? AttributedString(
-            markdown: viewModel.responseText,
-            options: .init(interpretedSyntax: .full)
-        ) {
-            Text(attributed)
-                .textSelection(.enabled)
-                .font(.body)
-                .foregroundStyle(Color.pastureTextPrimary(colorScheme))
-        } else {
-            Text(viewModel.responseText)
-                .textSelection(.enabled)
-                .font(.body)
-                .foregroundStyle(Color.pastureTextPrimary(colorScheme))
+        Group {
+            if !viewModel.isStreaming,
+               let attributed = try? AttributedString(
+                   markdown: viewModel.responseText,
+                   options: .init(interpretedSyntax: .full)
+               ) {
+                Text(attributed)
+            } else {
+                Text(viewModel.responseText)
+            }
         }
+        .textSelection(.enabled)
+        .font(.body)
+        .foregroundStyle(Color.pastureTextPrimary(colorScheme))
     }
 
     private var streamingIndicator: some View {
@@ -323,7 +322,7 @@ struct AskView: View {
     private func exportResponseToDisk() {
         guard !viewModel.responseText.isEmpty else { return }
         let panel = NSSavePanel()
-        let prefix = FilenameSanitizer.sanitize(String(viewModel.question.prefix(40)))
+        let prefix = FilenameSanitizer.sanitize(String(viewModel.question.prefix(AskViewModel.responseFilenamePrefixLength)))
         panel.nameFieldStringValue = (prefix.isEmpty ? "response" : prefix) + ".md"
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText, .plainText]
         panel.message = "Export response as Markdown"
@@ -340,28 +339,12 @@ struct AskView: View {
         feedbackDismissTask?.cancel()
         withAnimation { savedFeedback = message }
         feedbackDismissTask = Task {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(PastureLayout.toastDismissDelay))
             guard !Task.isCancelled else { return }
             withAnimation { savedFeedback = nil }
         }
     }
 
-    @ViewBuilder
-    private func saveFeedbackToast(_ message: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color.pastureSuccess)
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(Color.pastureTextPrimary(colorScheme))
-        }
-        .padding(.horizontal, PastureLayout.toastHPadding)
-        .padding(.vertical, PastureLayout.toastVPadding)
-        .background(.regularMaterial, in: Capsule())
-        .pastureShadow(PastureEffects.shadowFloat)
-        .padding(.bottom, PastureLayout.toastBottomOffset)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
 }
 
 private struct PulseModifier: ViewModifier {

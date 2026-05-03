@@ -10,14 +10,24 @@ public struct AIModel: Codable, Hashable, Sendable, Identifiable {
     public var displayName: String
     public var provider: AIProviderKind
     public var contextWindow: Int
+    public var maxOutputTokens: Int
     public var inputCostPer1M: Double
     public var outputCostPer1M: Double
 
-    public init(id: String, displayName: String, provider: AIProviderKind, contextWindow: Int, inputCostPer1M: Double, outputCostPer1M: Double) {
+    public init(
+        id: String,
+        displayName: String,
+        provider: AIProviderKind,
+        contextWindow: Int,
+        inputCostPer1M: Double,
+        outputCostPer1M: Double,
+        maxOutputTokens: Int = 8192
+    ) {
         self.id = id
         self.displayName = displayName
         self.provider = provider
         self.contextWindow = contextWindow
+        self.maxOutputTokens = maxOutputTokens
         self.inputCostPer1M = inputCostPer1M
         self.outputCostPer1M = outputCostPer1M
     }
@@ -33,7 +43,8 @@ public extension AIModel {
             provider: .anthropic,
             contextWindow: 200_000,
             inputCostPer1M: 3.0,
-            outputCostPer1M: 15.0
+            outputCostPer1M: 15.0,
+            maxOutputTokens: 16384
         ),
         AIModel(
             id: "claude-haiku-3-5-20241022",
@@ -41,7 +52,8 @@ public extension AIModel {
             provider: .anthropic,
             contextWindow: 200_000,
             inputCostPer1M: 0.80,
-            outputCostPer1M: 4.0
+            outputCostPer1M: 4.0,
+            maxOutputTokens: 8192
         ),
         AIModel(
             id: "anthropic/claude-sonnet-4-20250514",
@@ -49,7 +61,8 @@ public extension AIModel {
             provider: .openRouter,
             contextWindow: 200_000,
             inputCostPer1M: 3.0,
-            outputCostPer1M: 15.0
+            outputCostPer1M: 15.0,
+            maxOutputTokens: 16384
         ),
         AIModel(
             id: "anthropic/claude-haiku-3-5-20241022",
@@ -57,7 +70,8 @@ public extension AIModel {
             provider: .openRouter,
             contextWindow: 200_000,
             inputCostPer1M: 0.80,
-            outputCostPer1M: 4.0
+            outputCostPer1M: 4.0,
+            maxOutputTokens: 8192
         ),
     ]
 

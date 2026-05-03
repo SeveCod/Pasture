@@ -156,10 +156,10 @@ public actor AIClient {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
 
-        let userContent = "\(context)\n\n\(question)"
+        let userContent = context.isEmpty ? question : "\(context)\n\n\(question)"
         let body: [String: Any] = [
             "model": model.id,
-            "max_tokens": 4096,
+            "max_tokens": model.maxOutputTokens,
             "stream": true,
             "messages": [
                 ["role": "user", "content": userContent]
@@ -176,9 +176,10 @@ public actor AIClient {
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue("Pasture", forHTTPHeaderField: "X-Title")
 
-        let userContent = "\(context)\n\n\(question)"
+        let userContent = context.isEmpty ? question : "\(context)\n\n\(question)"
         let body: [String: Any] = [
             "model": model.id,
+            "max_tokens": model.maxOutputTokens,
             "stream": true,
             "messages": [
                 ["role": "user", "content": userContent]

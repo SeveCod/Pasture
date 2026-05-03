@@ -363,6 +363,8 @@ enum PastureLayout {
     static let toastBottomOffset: CGFloat = 20
     /// Toast corner radius (capsule, so this is large).
     static let toastRadius: CGFloat = 20
+    /// How long a feedback toast stays visible before auto-dismissing.
+    static let toastDismissDelay: Double = 2.5
 
     // MARK: Empty State
     /// Empty state icon size.

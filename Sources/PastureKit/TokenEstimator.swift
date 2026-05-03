@@ -47,4 +47,16 @@ public enum TokenEstimator {
         if usd >= 0.10 { return String(format: "~$%.2f", usd) }
         return String(format: "~$%.3f", usd)
     }
+
+    /// Total input token estimate: context already loaded + question text.
+    public static func inputTokenEstimate(contextTokens: Int, question: String) -> Int {
+        contextTokens + estimate(question)
+    }
+
+    /// Formatted pre-send cost string for a given context + question against a model.
+    /// `assumedOutputTokens` defaults to 1024 to avoid showing misleadingly low costs when the response may be long.
+    public static func costEstimate(contextTokens: Int, question: String, model: AIModel, assumedOutputTokens: Int = 1024) -> String {
+        let input = inputTokenEstimate(contextTokens: contextTokens, question: question)
+        return formattedCost(estimatedCost(inputTokens: input, outputTokens: assumedOutputTokens, model: model))
+    }
 }

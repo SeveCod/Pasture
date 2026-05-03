@@ -12,9 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Darwin.close(lockFD)
             lockFD = -1
             let myPID = ProcessInfo.processInfo.processIdentifier
-            let myName = ProcessInfo.processInfo.processName
             if let existing = NSWorkspace.shared.runningApplications.first(where: {
-                $0.localizedName == myName && $0.processIdentifier != myPID
+                $0.bundleIdentifier == "com.sevecod.pasture" && $0.processIdentifier != myPID
             }) {
                 existing.activate()
             }

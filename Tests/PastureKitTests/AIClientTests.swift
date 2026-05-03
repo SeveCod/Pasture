@@ -36,7 +36,7 @@ private let openRouterModel = AIModel(
 
         #expect(json["model"] as? String == "claude-test")
         #expect(json["stream"] as? Bool == true)
-        #expect(json["max_tokens"] as? Int == 4096)
+        #expect(json["max_tokens"] as? Int == anthropicModel.maxOutputTokens)
 
         let messages = try #require(json["messages"] as? [[String: String]])
         #expect(messages.count == 1)
@@ -66,7 +66,7 @@ private let openRouterModel = AIModel(
 
         #expect(json["model"] as? String == "anthropic/claude-test")
         #expect(json["stream"] as? Bool == true)
-        #expect(json.keys.contains("max_tokens") == false)
+        #expect(json["max_tokens"] as? Int == openRouterModel.maxOutputTokens)
     }
 }
 

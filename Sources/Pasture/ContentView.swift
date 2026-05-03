@@ -85,7 +85,7 @@ struct ContentView: View {
             TemplateSheet(
                 variables: $feedService.templateVariables,
                 totalTokens: fm.totalTokens(for: feedService.pendingFeedTargets),
-                onCancel: { feedService.showTemplateSheet = false },
+                onCancel: { feedService.cancelTemplateFeed() },
                 onConfirm: { feedService.confirmTemplateFeed(fm: fm) }
             )
         }
@@ -148,6 +148,8 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            let targets = feedTargets
+
             Button { showNewCollectionSheet = true } label: {
                 Label("New Collection", systemImage: "folder.badge.plus")
             }
@@ -178,7 +180,7 @@ struct ContentView: View {
             Button { exportFeedToDisk() } label: {
                 Label("Export", systemImage: "square.and.arrow.up")
             }
-            .disabled(feedTargets.isEmpty)
+            .disabled(targets.isEmpty)
             .help("Export context as .md to any location")
             .accessibilityLabel("Export context")
 
@@ -205,8 +207,8 @@ struct ContentView: View {
             .accessibilityValue(detailMode == .ask ? "Active" : "Inactive")
 
             FeedButton(
-                targets: feedTargets,
-                totalTokens: fm.totalTokens(for: feedTargets),
+                targets: targets,
+                totalTokens: fm.totalTokens(for: targets),
                 destinations: exportDestinations,
                 onClipboard: { executeFeed(destination: nil) },
                 onExport: { dest in executeFeed(destination: dest) }

@@ -41,8 +41,6 @@ public enum SSEParser {
             buffer.eventType = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
         } else if line.hasPrefix("data:") {
             buffer.dataLines.append(String(line.dropFirst(5)).trimmingCharacters(in: .init(charactersIn: " ")))
-        } else if line.hasPrefix("id:") || line.hasPrefix("retry:") {
-            // ignored for now
         }
         return nil
     }

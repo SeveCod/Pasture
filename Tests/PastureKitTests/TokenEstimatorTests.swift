@@ -136,4 +136,46 @@ struct TokenEstimatorTests {
     func formattedCostLarge() {
         #expect(TokenEstimator.formattedCost(0.15) == "~$0.15")
     }
+
+    // MARK: - inputTokenEstimate
+
+    @Test("inputTokenEstimate suma context y question")
+    func inputTokenEstimateSum() {
+        let contextTokens = 100
+        let question = "Hello World!"
+        let questionTokens = TokenEstimator.estimate(question)
+        #expect(TokenEstimator.inputTokenEstimate(contextTokens: contextTokens, question: question) == contextTokens + questionTokens)
+    }
+
+    @Test("inputTokenEstimate con question vacia usa solo context")
+    func inputTokenEstimateEmptyQuestion() {
+        #expect(TokenEstimator.inputTokenEstimate(contextTokens: 50, question: "") == 50)
+    }
+
+    // MARK: - costEstimate
+
+    @Test("costEstimate devuelve string formateado no vacio")
+    func costEstimateReturnsFormattedString() {
+        let model = AIModel(id: "test", displayName: "Test", provider: .anthropic,
+                            contextWindow: 200_000, inputCostPer1M: 3.0, outputCostPer1M: 15.0)
+        let result = TokenEstimator.costEstimate(contextTokens: 1000, question: "Hello", model: model)
+        #expect(!result.isEmpty)
+    }
+
+    @Test("costEstimate con modelo gratuito devuelve zero")
+    func costEstimateZeroCostModel() {
+        let freeModel = AIModel(id: "free", displayName: "Free", provider: .anthropic,
+                                contextWindow: 200_000, inputCostPer1M: 0.0, outputCostPer1M: 0.0)
+        let result = TokenEstimator.costEstimate(contextTokens: 0, question: "", model: freeModel)
+        #expect(result == "$0.00")
+    }
+
+    @Test("costEstimate con assumedOutputTokens mayor produce coste mayor")
+    func costEstimateAssumedOutputTokensAffectsCost() {
+        let model = AIModel(id: "test", displayName: "Test", provider: .anthropic,
+                            contextWindow: 200_000, inputCostPer1M: 3.0, outputCostPer1M: 15.0)
+        let low  = TokenEstimator.estimatedCost(inputTokens: 0, outputTokens: 1024,  model: model)
+        let high = TokenEstimator.estimatedCost(inputTokens: 0, outputTokens: 8192,  model: model)
+        #expect(high > low)
+    }
 }

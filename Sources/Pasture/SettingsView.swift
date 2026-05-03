@@ -135,6 +135,7 @@ private struct AISettingsTab: View {
     @State private var selectedModelID: String = AISettings.loadModelID()
     @State private var apiKeyInput = ""
     @State private var keySaved = false
+    @State private var hasKeychainKey: Bool = AISettings.loadAPIKey(for: AISettings.loadProvider()) != nil
     @State private var testResult: String?
     @State private var isTesting = false
 
@@ -158,6 +159,7 @@ private struct AISettingsTab: View {
                     }
                     apiKeyInput = ""
                     keySaved = false
+                    hasKeychainKey = AISettings.loadAPIKey(for: newValue) != nil
                     postChange()
                 }
 
@@ -176,6 +178,7 @@ private struct AISettingsTab: View {
                         do {
                             try AISettings.saveAPIKey(apiKeyInput, for: selectedProvider)
                             keySaved = true
+                            hasKeychainKey = true
                         } catch {
                             keySaved = false
                         }
@@ -184,7 +187,7 @@ private struct AISettingsTab: View {
                     .disabled(apiKeyInput.isEmpty)
                 }
 
-                if AISettings.loadAPIKey(for: selectedProvider) != nil && apiKeyInput.isEmpty {
+                if hasKeychainKey && apiKeyInput.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: "key.fill")
                             .font(.system(size: 10))
@@ -197,6 +200,7 @@ private struct AISettingsTab: View {
                         Button("Remove", role: .destructive) {
                             AISettings.deleteAPIKey(for: selectedProvider)
                             keySaved = false
+                            hasKeychainKey = false
                             postChange()
                         }
                         .font(.caption)
@@ -247,7 +251,7 @@ private struct AISettingsTab: View {
                         Text(isTesting ? "Testing\u{2026}" : "Test Connection")
                     }
                 }
-                .disabled(AISettings.loadAPIKey(for: selectedProvider) == nil || isTesting)
+                .disabled(!hasKeychainKey || isTesting)
 
                 if let result = testResult {
                     Text(result)
@@ -276,8 +280,6 @@ private struct AISettingsTab: View {
                     break
                 }
                 testResult = gotResponse ? "\u{2714} Connection successful" : "\u{2714} Connected (empty response)"
-            } catch let error as AIClientError {
-                testResult = "\u{2718} \(error.localizedDescription)"
             } catch {
                 testResult = "\u{2718} \(error.localizedDescription)"
             }

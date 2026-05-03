@@ -82,10 +82,14 @@ final class MDFileManager: ObservableObject {
         return url
     }
 
-    private func refreshCollections() {
-        collections = Self.realSubdirectories(in: Self.pastureDir)
+    private func refreshCollections(from subdirs: [URL]) {
+        collections = subdirs
             .map(\.lastPathComponent)
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func refreshCollections() {
+        refreshCollections(from: Self.realSubdirectories(in: Self.pastureDir))
     }
 
     // MARK: — Lifecycle
@@ -206,12 +210,13 @@ final class MDFileManager: ObservableObject {
 
     func loadFiles() {
         let pastureDir = Self.pastureDir
+        let subdirs = Self.realSubdirectories(in: pastureDir)
         var allMDFiles = Self.mdFiles(in: pastureDir)
-        for subdir in Self.realSubdirectories(in: pastureDir) {
+        for subdir in subdirs {
             allMDFiles.append(contentsOf: Self.mdFiles(in: subdir))
         }
         files = allMDFiles.sorted { $0.modifiedDate > $1.modifiedDate }
-        refreshCollections()
+        refreshCollections(from: subdirs)
         updateSubdirectoryWatchers()
     }
 
