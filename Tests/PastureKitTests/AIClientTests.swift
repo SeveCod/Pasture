@@ -68,6 +68,24 @@ private let openRouterModel = AIModel(
         #expect(json["stream"] as? Bool == true)
         #expect(json["max_tokens"] as? Int == openRouterModel.maxOutputTokens)
     }
+
+    @Test func emptyContextAnthropicUsesQuestionOnly() throws {
+        let req = try AIClient.buildRequest(question: "hello", context: "", model: anthropicModel, apiKey: "key")
+        let body = try #require(req.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try #require(json["messages"] as? [[String: String]])
+        let content = try #require(messages[0]["content"])
+        #expect(content == "hello")
+    }
+
+    @Test func emptyContextOpenRouterUsesQuestionOnly() throws {
+        let req = try AIClient.buildRequest(question: "hello", context: "", model: openRouterModel, apiKey: "key")
+        let body = try #require(req.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try #require(json["messages"] as? [[String: Any]])
+        let content = try #require(messages[0]["content"] as? String)
+        #expect(content == "hello")
+    }
 }
 
 // MARK: - Extract Delta

@@ -7,6 +7,30 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-03
+
+### Changed
+
+- Sonnet 4 responses can now be up to 16 384 tokens (previously capped at 4 096). Haiku 3.5 remains at 8 192. Per-model `maxOutputTokens` replaces the old hard-coded limit.
+
+### Fixed
+
+- Ask mode no longer inserts a blank line before the question when no files are selected — the question is sent without any context prefix.
+- Markdown preview no longer briefly flashes the previous file's content when switching between files.
+
+### Internal
+
+- `MarkdownPreviewView`: async `AttributedString` render via `.task(id:)` eliminates the flash on file change.
+- `AIModel`: new `maxOutputTokens` field per model; `AIClient` passes it as `max_tokens` in the request body.
+- `AIClient`: empty-context guard — skips the `\n\n` separator when no files are selected.
+- `AskViewModel`: `hasAPIKey` cached as `@Published var` to avoid repeated Keychain reads; `selectedProvider`/`selectedModelID` narrowed to `private(set)`; `TokenEstimator` helpers delegated to PastureKit public API.
+- `FeedAction`/`FeedButton`: token label strings extracted to computed properties (DRY).
+- `FeedService`: `cancelTemplateFeed()` and private `resetPendingFeed()` helper added.
+- `MDFileManager`: `refreshCollections(from:)` overload eliminates a redundant directory scan on load.
+- `SidebarView`: file grouping replaced with O(n) `Dictionary(grouping:)` (was O(n²)).
+- `TokenEstimator`: `inputTokenEstimate` and `costEstimate` extracted as public helpers; 4 new tests.
+- Tests: 2 new empty-context guard tests for Anthropic and OpenRouter (296 tests total).
+
 ## [1.2.0] - 2026-04-29
 
 ### Added
@@ -132,7 +156,8 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/SeveCod/Pasture/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/SeveCod/Pasture/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/SeveCod/Pasture/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/SeveCod/Pasture/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/SeveCod/Pasture/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/SeveCod/Pasture/releases/tag/v1.0.0
