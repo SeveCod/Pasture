@@ -214,7 +214,7 @@ Sources/
 │   └── AppDelegate.swift
 ├── pasture-mcp/               — MCP server executable
 │   └── main.swift             — Thin transport loop (stdin → MCPLineReader → MCPDispatcher → stdout)
-└── Tests/PastureKitTests/     — 490 tests (Swift Testing framework)
+└── Tests/PastureKitTests/     — 491 tests (Swift Testing framework)
 ```
 
 No CoreData, no SwiftData, no external dependencies.

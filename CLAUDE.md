@@ -13,7 +13,7 @@ The detail panel toggles between a read-only Markdown preview and an Ask mode fo
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
-swift test               # Run all PastureKit unit tests (490 tests, Swift Testing framework)
+swift test               # Run all PastureKit unit tests (491 tests, Swift Testing framework)
 swift test --filter TemplateEngineTests                        # Run one test suite
 swift test --filter TemplateEngineTests/renderSimpleReplacement # Run a single test
 swift test --filter MCPDispatcherTests                         # MCP dispatcher tests
@@ -35,7 +35,7 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 - **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security), `FileLibrary` (filesystem queries: async library scan, dedup URLs, hidden/symlink filtering), `DocumentImporter` (PDF/CSV/DOCX → Markdown conversion, no persistence), `FeedFormat`/`FeedFormatSettings` (feed payload format enum + UserDefaults persistence), `SecretScanner` (pre-feed credential detector), `ContextLimit` (binary context-window guard for sidebar), `SelectionPreset`/`SelectionPresetStore` (named file selections with relative-path persistence), `PresetResolver` (relative-path → URL resolution with path-traversal guard). Also contains the full MCP layer — see **MCP layer** subsection below. All public. This is the testable module.
 - **Pasture** (`Sources/Pasture/`) — SwiftUI app. Re-exports PastureKit via `@_exported import PastureKit` in `TemplateEngine.swift`.
 - **pasture-mcp** (`Sources/pasture-mcp/`) — MCP server executable. A thin `main.swift` (~30 lines) that wires `FileHandle.standardInput` to `MCPLineReader` and feeds each line to `MCPDispatcher`. All protocol logic lives in PastureKit (ADR-004). Zero external dependencies beyond PastureKit and Foundation.
-- **PastureKitTests** (`Tests/PastureKitTests/`) — 490 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 7 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`.
+- **PastureKitTests** (`Tests/PastureKitTests/`) — 491 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 7 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`.
 
 ### Data flow
 
@@ -162,7 +162,7 @@ Ten files under `Sources/PastureKit/MCP/`. All logic is pure Swift, `Sendable`, 
 
 **FeedFormatSettings → Views communication**: `SettingsView` posts `FeedFormatSettings.didChangeNotification`. `FeedService` and `ContextBuilder` consumers reload via `FeedFormatSettings.feedFormat()` at call time (not cached).
 
-**MCP dispatcher boundary**: `MCPDispatcher.handle(line:)` is the sole testable entry point for the MCP server. It accepts a raw line string, returns a response line or `nil`, and never throws. All 490 tests treat this as the boundary — no process spawning required. The `main.swift` executable is thin by design (ADR-004): it only handles transport (`FileHandle` I/O, the `MCPLineReader` loop) and delegates everything else to the dispatcher.
+**MCP dispatcher boundary**: `MCPDispatcher.handle(line:)` is the sole testable entry point for the MCP server. It accepts a raw line string, returns a response line or `nil`, and never throws. All 491 tests treat this as the boundary — no process spawning required. The `main.swift` executable is thin by design (ADR-004): it only handles transport (`FileHandle` I/O, the `MCPLineReader` loop) and delegates everything else to the dispatcher.
 
 **MCP stdout is sacred**: the `pasture-mcp` process writes only framed JSON-RPC messages to stdout (one message per line, terminated by `\n`). Diagnostic output goes exclusively to stderr. Any `print()` or `Swift.print` to stdout from PastureKit code called via the MCP path would corrupt the framing. Logs use `FileHandle.standardError.write` directly (SEC-M7).
 
