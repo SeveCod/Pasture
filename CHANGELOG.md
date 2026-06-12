@@ -17,7 +17,7 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - SPM package gains a fourth target: `pasture-mcp` (executable). The MCP protocol layer (`MCPDispatcher`, `MCPTools`, `MCPMessage`, `MCPPathResolver`, `MCPLimits`, `MCPLineReader`, `MCPServerConfig`, `MCPConfigGenerator`, `MCPVaultStats`, `MCPProtocol`) lives in PastureKit for testability; the executable is a thin `main.swift` that wires transport only.
-- Test count: 420 → 490 (70 new MCP tests in 7 suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`).
+- Test count: 420 → 491 (71 new MCP tests in 7 suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`).
 - `DesignTokens`: added `pastureSuccess(_:)` color token (used in Settings → AI key-saved indicator and Settings → MCP scan result).
 
 ### Security
