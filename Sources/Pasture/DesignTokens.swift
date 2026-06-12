@@ -125,8 +125,15 @@ extension Color {
     /// Error/destructive — dark mode. Lighter warm red, ≥4.5:1 on dark backgrounds. #E07A7A
     static let pastureErrorDark = Color(red: 0.878, green: 0.478, blue: 0.478)
 
-    /// Success. Uses our sage family. #5A9F5A
-    static let pastureSuccess = Color(red: 0.353, green: 0.624, blue: 0.353)
+    /// Success — light mode. Darkened sage to meet WCAG AA on light backgrounds
+    /// (B-1: the old single #5A9F5A measured 3.21:1 on white / 2.87:1 on the
+    /// grouped form background, below 4.5:1). #2F7A2F measures 5.33:1 on white and
+    /// 4.78:1 on the grouped-form background — both ≥4.5:1. #2F7A2F
+    static let pastureSuccessLight = Color(red: 0.184, green: 0.478, blue: 0.184)
+
+    /// Success — dark mode. The original sage, which reads fine on dark
+    /// backgrounds. #5A9F5A
+    static let pastureSuccessDark = Color(red: 0.353, green: 0.624, blue: 0.353)
 }
 
 // MARK: - Adaptive Color Helpers (resolves light/dark automatically)
@@ -191,6 +198,11 @@ extension Color {
     /// Error/destructive — adapts to color scheme.
     static func pastureError(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? .pastureErrorDark : .pastureErrorLight
+    }
+
+    /// Success — adapts to color scheme (B-1: light variant meets WCAG AA).
+    static func pastureSuccess(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? .pastureSuccessDark : .pastureSuccessLight
     }
 
     /// Warning — adapts to color scheme.

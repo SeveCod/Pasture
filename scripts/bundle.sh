@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="Pasture"
 BUNDLE_ID="com.sevecod.pasture"
-VERSION="1.4.0"
+VERSION="1.5.0"
 BUILD_DIR="$PROJECT_DIR/.build/release"
 OUTPUT_DIR="$PROJECT_DIR/dist"
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
@@ -19,6 +19,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "$BUILD_DIR/pasture-mcp" "$APP_BUNDLE/Contents/MacOS/pasture-mcp"
 
 if [ -f "$PROJECT_DIR/AppIcon.icns" ]; then
     cp "$PROJECT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"

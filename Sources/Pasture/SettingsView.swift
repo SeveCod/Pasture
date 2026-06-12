@@ -9,6 +9,8 @@ struct SettingsView: View {
                 .tabItem { Label("Export", systemImage: "square.and.arrow.up") }
             AISettingsTab()
                 .tabItem { Label("AI", systemImage: "brain") }
+            MCPSettingsTab()
+                .tabItem { Label("MCP", systemImage: "powerplug") }
         }
         .frame(minWidth: 560, minHeight: 280)
     }
@@ -202,7 +204,7 @@ private struct AISettingsTab: View {
 
                     if keySaved {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Color.pastureSuccess)
+                            .foregroundStyle(Color.pastureSuccess(colorScheme))
                             .accessibilityLabel("API key saved successfully")
                     }
 
@@ -224,7 +226,7 @@ private struct AISettingsTab: View {
                     HStack(spacing: 4) {
                         Image(systemName: "key.fill")
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.pastureSuccess)
+                            .foregroundStyle(Color.pastureSuccess(colorScheme))
                             .accessibilityHidden(true)
                         Text("Key saved in Keychain")
                             .font(.caption)
@@ -289,7 +291,7 @@ private struct AISettingsTab: View {
                 if let result = testResult {
                     Text(result)
                         .font(.caption)
-                        .foregroundStyle(result.hasPrefix("\u{2714}") ? Color.pastureSuccess : Color.pastureError(colorScheme))
+                        .foregroundStyle(result.hasPrefix("\u{2714}") ? Color.pastureSuccess(colorScheme) : Color.pastureError(colorScheme))
                 }
             }
         }
@@ -323,5 +325,187 @@ private struct AISettingsTab: View {
 
     private func postChange() {
         NotificationCenter.default.post(name: AISettings.didChangeNotification, object: nil)
+    }
+}
+
+// MARK: - MCP Tab (HU-1, HU-2, HU-3, SEC-M9)
+
+private struct MCPSettingsTab: View {
+    /// Número máximo de líneas de secretos visibles antes de resumir (m-3).
+    private static let maxVisibleSecretLines = 5
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var feedback: String?
+    @State private var secretStats: MCPVaultStats.SecretStats?
+    @State private var isScanning = false
+
+    /// Ruta real del binario embebido. NUNCA hardcodeada: se deriva de la
+    /// ubicación del .app en ejecución, así mover el .app mueve la ruta (HU-2).
+    private var binaryPath: String {
+        Bundle.main.bundleURL
+            .appendingPathComponent("Contents/MacOS/pasture-mcp")
+            .path
+    }
+
+    /// M-4: ¿existe el binario embebido? Sin él, registrar no tiene sentido.
+    private var binaryExists: Bool {
+        FileManager.default.fileExists(atPath: binaryPath)
+    }
+
+    /// Formato del feed actual del usuario, inyectado en el snippet (ADR-007).
+    private var feedFormat: FeedFormat { FeedFormatSettings.feedFormat() }
+
+    var body: some View {
+        Form {
+            // 1. Descripción de la capacidad (HU-1).
+            descriptionSection
+
+            // 2. Comprobación de secretos ANTES de registrar (SEC-M9): el
+            //    consentimiento informado se basa en escanear antes (orden por Alfred).
+            secretCheckSection
+
+            // 3. Registro del server (HU-2/3).
+            registerSection
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: — Secciones
+
+    private var descriptionSection: some View {
+        Section {
+            Text("Pasture can act as a Model Context Protocol server, exposing ~/.pasture/ as read-only to MCP clients like Claude Code and Claude Desktop. Register it once with the configuration below; the client then reads your curated context without copy-paste.")
+                .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+                .fixedSize(horizontal: false, vertical: true)
+        } header: {
+            Text("Model Context Protocol")
+        }
+    }
+
+    private var secretCheckSection: some View {
+        Section {
+            Button {
+                scanForSecrets()
+            } label: {
+                HStack {
+                    if isScanning {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(isScanning ? "Scanning\u{2026}" : "Scan vault for secrets")
+                }
+            }
+            .disabled(isScanning)
+
+            if let stats = secretStats {
+                secretStatsView(stats)
+            }
+        } header: {
+            Text("Vault secret check")
+        } footer: {
+            Text("Before registering, check whether your vault contains credential patterns. The MCP channel delivers file contents unchanged — ~/.pasture/ is meant for shareable context, not secrets.")
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+        }
+    }
+
+    @ViewBuilder
+    private func secretStatsView(_ stats: MCPVaultStats.SecretStats) -> some View {
+        if stats.fileCount == 0 {
+            Label("No secret patterns detected in the vault.", systemImage: "checkmark.shield")
+                .foregroundStyle(Color.pastureSuccess(colorScheme))
+        } else {
+            Label("\(stats.fileCount) file(s) contain possible secrets:", systemImage: "exclamationmark.shield")
+                .foregroundStyle(Color.pastureError(colorScheme))
+            // m-3: limita a 5 líneas visibles + resumen del resto.
+            ForEach(stats.summaryLines.prefix(Self.maxVisibleSecretLines), id: \.self) { line in
+                Text(line)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+            }
+            if stats.summaryLines.count > Self.maxVisibleSecretLines {
+                Text("\u{2026}and \(stats.summaryLines.count - Self.maxVisibleSecretLines) more files")
+                    .font(.caption)
+                    .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+            }
+        }
+    }
+
+    private var registerSection: some View {
+        Section {
+            // M-3: Feed format activo (solo lectura).
+            LabeledContent("Active Feed format", value: feedFormat.displayName)
+
+            // Claude Code.
+            Button {
+                copy(MCPConfigGenerator.claudeCodeCommand(binaryPath: binaryPath, feedFormat: feedFormat))
+            } label: {
+                Label("Copy configuration (Claude Code)", systemImage: "terminal")
+            }
+            .disabled(!binaryExists)
+            .accessibilityHint("Copies a 'claude mcp add' command for your terminal")   // m-1
+            Text("Paste in your terminal and press Enter.")                              // M-1
+                .font(.caption)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+
+            // Claude Desktop.
+            Button {
+                copy(MCPConfigGenerator.claudeDesktopJSON(binaryPath: binaryPath, feedFormat: feedFormat))
+            } label: {
+                Label("Copy configuration (Claude Desktop)", systemImage: "doc.on.clipboard")
+            }
+            .disabled(!binaryExists)
+            .accessibilityHint("Copies a JSON block for claude_desktop_config.json")    // m-1
+            Text("Paste inside the mcpServers key in claude_desktop_config.json.")       // M-1
+                .font(.caption)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+
+            // M-4: binario ausente.
+            if !binaryExists {
+                Label("Server binary not found. Install Pasture.app to enable MCP registration.", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color.pastureError(colorScheme))
+            }
+
+            if let feedback {
+                Text(feedback)
+                    .font(.caption)
+                    .foregroundStyle(Color.pastureSuccess(colorScheme))
+                    .transition(.opacity)
+            }
+        } header: {
+            Text("Register the server")
+        } footer: {
+            // m-4: consentimiento en presente.
+            Text("This server gives your MCP client read-only access to ~/.pasture/. File contents may be sent to the client's AI provider.")
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+        }
+    }
+
+    // MARK: — Acciones
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        withAnimation { feedback = "Copied to clipboard." }
+        // M-5: auto-limpia el feedback tras ~2.5 s con animación.
+        Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            await MainActor.run {
+                withAnimation { feedback = nil }
+            }
+        }
+    }
+
+    /// SEC-M9: escaneo bajo demanda (no en cada keystroke). Off the main actor.
+    private func scanForSecrets() {
+        isScanning = true
+        let vault = MDFileManager.pastureDir
+        Task {
+            let stats = await Task.detached { MCPVaultStats.secretStats(vaultRoot: vault) }.value
+            await MainActor.run {
+                secretStats = stats
+                isScanning = false
+            }
+        }
     }
 }

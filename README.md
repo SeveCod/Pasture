@@ -74,6 +74,44 @@ If a file contains template variables, Pasture prompts for their values before c
 
 The default output format is XML/CDATA. You can switch to Markdown fences or plain text in Preferences → Export → Feed Output Format.
 
+### MCP server
+
+Pasture ships an embedded [Model Context Protocol](https://modelcontextprotocol.io/) server (`pasture-mcp`). Register it once and your MCP client can read `~/.pasture/` directly — no copy-paste required.
+
+**Four read-only tools:**
+
+| Tool | What it does |
+|---|---|
+| `list_files` | List all Markdown files and collections in the vault |
+| `read_file` | Return the raw content of a single file by relative path |
+| `search` | Find files whose name or content contains a literal query (case-insensitive) |
+| `feed_context` | Assemble vault context in Pasture's Feed format, from a collection or a list of files |
+
+**Register with Claude Code** — go to Settings → MCP, click "Copy configuration (Claude Code)", paste in your terminal:
+
+```bash
+claude mcp add pasture --env PASTURE_FEED_FORMAT=xml -- /Applications/Pasture.app/Contents/MacOS/pasture-mcp
+```
+
+**Register with Claude Desktop** — go to Settings → MCP, click "Copy configuration (Claude Desktop)", paste inside the `mcpServers` key in `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "pasture": {
+      "command": "/Applications/Pasture.app/Contents/MacOS/pasture-mcp",
+      "env": { "PASTURE_FEED_FORMAT": "xml" }
+    }
+  }
+}
+```
+
+The `PASTURE_FEED_FORMAT` value matches your current Feed Output Format setting (`xml` / `markdown` / `plainText`). The registration snippets in Settings inject the correct value automatically.
+
+Before registering, use the "Scan vault for secrets" button to check whether `~/.pasture/` contains credential patterns. The MCP channel delivers file contents unchanged — `~/.pasture/` is meant for shareable context, not secrets.
+
+For full tool reference see [`docs/mcp-server.md`](docs/mcp-server.md).
+
 ### Scan Folder
 Toolbar button. Recursively scans a directory for `.md` files and imports them into a new collection.
 
@@ -139,7 +177,18 @@ Sources/
 │   ├── ContextLimit.swift     — Context window guard logic (sidebar indicator)
 │   ├── SelectionPreset.swift  — Named file selections (relative-path model)
 │   ├── SelectionPresetStore.swift — Preset CRUD (UserDefaults)
-│   └── PresetResolver.swift   — Relative-path → URL resolution (path-traversal guard)
+│   ├── PresetResolver.swift   — Relative-path → URL resolution (path-traversal guard)
+│   └── MCP/                   — MCP server protocol layer (testable, no I/O)
+│       ├── MCPMessage.swift   — JSON-RPC 2.0 types (JSONRPCID, JSONValue, requests, responses)
+│       ├── MCPProtocol.swift  — Protocol constants, InitializeResult, ToolCallResult
+│       ├── MCPDispatcher.swift— handle(line:) → response line or nil
+│       ├── MCPTools.swift     — Four read-only tools: list_files, read_file, search, feed_context
+│       ├── MCPPathResolver.swift — Two-layer path validation (../  + symlink resolution)
+│       ├── MCPLimits.swift    — Security caps (line size, query length, results, response size)
+│       ├── MCPLineReader.swift— Bounded stdin reader (cap per line, CRLF stripping)
+│       ├── MCPServerConfig.swift — Config from environment (vault root, feed format)
+│       ├── MCPConfigGenerator.swift — Registration snippet generator (Claude Code + Desktop)
+│       └── MCPVaultStats.swift — On-demand vault secret scan for consent UI
 ├── Pasture/                   — SwiftUI app (executable)
 │   ├── PastureApp.swift       — App entry, scenes, menu commands
 │   ├── ContentView.swift      — Navigation, preview/ask toggle, toolbar
@@ -160,16 +209,18 @@ Sources/
 │   ├── MDFileManager.swift    — File CRUD and library state
 │   ├── MDFileManager+Import.swift — Import persistence, merge, scan folder
 │   ├── DirectoryWatcher.swift — DispatchSource file watching (debounced)
-│   ├── SettingsView.swift     — Export + AI settings tabs
+│   ├── SettingsView.swift     — Export, AI, and MCP settings tabs
 │   ├── DesignTokens.swift     — Design system
 │   └── AppDelegate.swift
-└── Tests/PastureKitTests/     — 420 tests (Swift Testing framework)
+├── pasture-mcp/               — MCP server executable
+│   └── main.swift             — Thin transport loop (stdin → MCPLineReader → MCPDispatcher → stdout)
+└── Tests/PastureKitTests/     — 490 tests (Swift Testing framework)
 ```
 
 No CoreData, no SwiftData, no external dependencies.
 
 ## Release
 
-**Current version: 1.4.0** (2026-06-12)
+**Current version: 1.5.0** (2026-06-12)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history of changes.

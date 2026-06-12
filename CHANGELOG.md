@@ -5,6 +5,32 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-06-12
+
+### Added
+
+- **MCP server (`pasture-mcp`)**: Pasture now ships an embedded Model Context Protocol server. Register it once in Claude Code or Claude Desktop; the client can then read your vault without copy-paste. Four read-only tools: `list_files`, `read_file`, `search` (literal, case-insensitive), and `feed_context` (assemble a collection or a file list using Pasture's Feed format). JSON-RPC 2.0 over stdio, MCP spec `2025-06-18`.
+- **Settings → MCP tab**: registration UI with step-by-step instructions. "Copy configuration (Claude Code)" generates a `claude mcp add` command; "Copy configuration (Claude Desktop)" generates the `mcpServers` JSON block for `claude_desktop_config.json`. Both snippets are disabled until the embedded binary exists in the app bundle.
+- **Vault secret check in MCP tab** (consent-first): before registering the server, users can scan their vault for credential patterns. The scan reuses `SecretScanner` and reports affected files with masked snippets — the raw values are never shown. The check runs on demand, not on every settings open.
+- **`PASTURE_FEED_FORMAT` environment variable**: controls the feed output format used by the MCP server (`xml` / `markdown` / `plainText`, default `xml`). Registration snippets inject the user's current setting automatically so the server matches the app.
+
+### Changed
+
+- SPM package gains a fourth target: `pasture-mcp` (executable). The MCP protocol layer (`MCPDispatcher`, `MCPTools`, `MCPMessage`, `MCPPathResolver`, `MCPLimits`, `MCPLineReader`, `MCPServerConfig`, `MCPConfigGenerator`, `MCPVaultStats`, `MCPProtocol`) lives in PastureKit for testability; the executable is a thin `main.swift` that wires transport only.
+- Test count: 420 → 490 (70 new MCP tests in 7 suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`).
+- `DesignTokens`: added `pastureSuccess(_:)` color token (used in Settings → AI key-saved indicator and Settings → MCP scan result).
+
+### Security
+
+- MCP path validation applies two layers: `PathValidator.isInside` blocks `../` traversal; `resolvingSymlinksInPath()` + re-validation blocks symlinks pointing outside `~/.pasture/` (SEC-M2).
+- MCP input lines are capped at 10 MB by `MCPLineReader` before reaching the JSON decoder; lines over the cap are discarded and logged to stderr without touching the connection (SEC-M3).
+- MCP search caps query length at 1,000 characters and results at 100 files; an empty query returns an explicit empty message rather than dumping the vault (SEC-M4).
+- MCP responses are capped at 25 MB; content above the cap returns `isError: true` without serializing the payload (SEC-M5).
+- The MCP server is strictly read-only — no tool modifies the filesystem (SEC-M6).
+- `pasture-mcp` writes only framed JSON-RPC to stdout; all diagnostic output goes to stderr. No `print()` path to stdout exists in the MCP code path (SEC-M7).
+- MCP secret warnings report family and file name only, never the matched value; file content is delivered unchanged — the warning is informational, not a gate (SEC-M8).
+- The MCP Settings tab scans the vault for secrets before showing registration snippets, so users can make an informed consent decision (SEC-M9).
+
 ## [1.4.0] - 2026-06-12
 
 ### Added
@@ -216,6 +242,7 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+[1.5.0]: https://github.com/SeveCod/Pasture/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/SeveCod/Pasture/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/SeveCod/Pasture/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/SeveCod/Pasture/compare/v1.2.0...v1.2.1

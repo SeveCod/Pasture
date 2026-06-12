@@ -44,7 +44,7 @@ struct FeedbackToast: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .foregroundStyle(isError ? Color.pastureError(colorScheme) : Color.pastureSuccess)
+                .foregroundStyle(isError ? Color.pastureError(colorScheme) : Color.pastureSuccess(colorScheme))
             Text(message)
                 .font(.callout)
                 .foregroundStyle(Color.pastureTextPrimary(colorScheme))

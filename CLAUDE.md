@@ -13,10 +13,12 @@ The detail panel toggles between a read-only Markdown preview and an Ask mode fo
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
-swift test               # Run all PastureKit unit tests (420 tests, Swift Testing framework)
+swift test               # Run all PastureKit unit tests (490 tests, Swift Testing framework)
 swift test --filter TemplateEngineTests                        # Run one test suite
 swift test --filter TemplateEngineTests/renderSimpleReplacement # Run a single test
+swift test --filter MCPDispatcherTests                         # MCP dispatcher tests
 swift run                # Build + launch the app
+swift run pasture-mcp    # Build + run the MCP server (debug; reads stdin, writes stdout)
 ./scripts/bundle.sh      # Build release + create .app bundle in dist/
 ```
 
@@ -26,13 +28,14 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 
 ## Architecture
 
-**Two-target SPM layout**: `PastureKit` (library with testable logic) and `Pasture` (executable, UI). Swift 6 strict concurrency.
+**Four-target SPM layout**: `PastureKit` (library with testable logic), `Pasture` (executable, UI), `pasture-mcp` (MCP server executable), and `PastureKitTests` (test target). Swift 6 strict concurrency.
 
 ### Targets
 
-- **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security), `FileLibrary` (filesystem queries: async library scan, dedup URLs, hidden/symlink filtering), `DocumentImporter` (PDF/CSV/DOCX → Markdown conversion, no persistence), `FeedFormat`/`FeedFormatSettings` (feed payload format enum + UserDefaults persistence), `SecretScanner` (pre-feed credential detector), `ContextLimit` (binary context-window guard for sidebar), `SelectionPreset`/`SelectionPresetStore` (named file selections with relative-path persistence), `PresetResolver` (relative-path → URL resolution with path-traversal guard). All public. This is the testable module.
+- **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security), `FileLibrary` (filesystem queries: async library scan, dedup URLs, hidden/symlink filtering), `DocumentImporter` (PDF/CSV/DOCX → Markdown conversion, no persistence), `FeedFormat`/`FeedFormatSettings` (feed payload format enum + UserDefaults persistence), `SecretScanner` (pre-feed credential detector), `ContextLimit` (binary context-window guard for sidebar), `SelectionPreset`/`SelectionPresetStore` (named file selections with relative-path persistence), `PresetResolver` (relative-path → URL resolution with path-traversal guard). Also contains the full MCP layer — see **MCP layer** subsection below. All public. This is the testable module.
 - **Pasture** (`Sources/Pasture/`) — SwiftUI app. Re-exports PastureKit via `@_exported import PastureKit` in `TemplateEngine.swift`.
-- **PastureKitTests** (`Tests/PastureKitTests/`) — 420 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`).
+- **pasture-mcp** (`Sources/pasture-mcp/`) — MCP server executable. A thin `main.swift` (~30 lines) that wires `FileHandle.standardInput` to `MCPLineReader` and feeds each line to `MCPDispatcher`. All protocol logic lives in PastureKit (ADR-004). Zero external dependencies beyond PastureKit and Foundation.
+- **PastureKitTests** (`Tests/PastureKitTests/`) — 490 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 7 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`.
 
 ### Data flow
 
@@ -48,6 +51,21 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 - **`Settings`** — Preferences panel (`SettingsView`) for managing export destinations and AI configuration (Cmd+,).
 
 `AppDelegate` prevents app termination when the main window closes (`applicationShouldTerminateAfterLastWindowClosed → false`) and handles Dock icon reopen.
+
+### MCP layer (PastureKit/MCP/)
+
+Ten files under `Sources/PastureKit/MCP/`. All logic is pure Swift, `Sendable`, no I/O of its own — the executable only wires transport.
+
+- **`MCPMessage.swift`** — JSON-RPC 2.0 types: `JSONRPCID` (`string` | `number`; distinct from absent), `JSONValue` (`Codable`/`Sendable` generic JSON tree replacing `[String: Any]`), `JSONRPCRequest` (with `IDPresence` enum distinguishing absent vs. explicit-null vs. value), `JSONRPCResponse<R>`, `JSONRPCErrorResponse` (forces `id: null` as explicit key per spec). Extension `Encodable.mcpLine()` produces a single-line JSON string with `.sortedKeys` + `.withoutEscapingSlashes` (ADR-006; the latter is required — without it, `/` is escaped as `\/`, breaking framing).
+- **`MCPProtocol.swift`** — Protocol constants (`MCPProtocol.version = "2025-06-18"`, server name/version, JSON-RPC error codes), `InitializeResult` (echoes `protocolVersion`, `capabilities.tools`, `serverInfo`; `capabilities.tools` is always present even if empty — MCP spec gotcha), `EmptyResult` (for `ping`), `ToolCallResult` (tool-level result: `content`, `isError`, optional `warning`; distinct from JSON-RPC `error` object).
+- **`MCPDispatcher.swift`** — `struct MCPDispatcher: Sendable`. The testable boundary: `handle(line: String) -> String?`. Returns `nil` for notifications (absent `id`) and empty lines; returns an error line for explicit-null `id` (-32600) or malformed JSON (-32700); dispatches `initialize`, `ping`, `tools/list`, `tools/call` to their handlers. Never throws — all failures become error lines (SEC-M12: an invalid request never drops the connection).
+- **`MCPTools.swift`** — `enum MCPTools`. Tool catalog (`tools/list`) and execution (`tools/call`). Four read-only tools: `list_files`, `read_file`, `search`, `feed_context`. Reuses `FileLibrary`, `PathValidator`, `ContextBuilder`, `SecretScanner`, and `MDFile.matches` from the rest of PastureKit. Contains `VaultFile` and `FeedSelection` helper structs, `enumerateVaultFiles` (root + one-level subdirectories via `FileLibrary`, symlinks filtered), and `secretWarning`/`combinedWarning` helpers for SEC-M8.
+- **`MCPPathResolver.swift`** — `enum MCPPathResolver`. Two-layer path validation for tool arguments: layer 1 uses `PathValidator.isInside` (resolves `..`), layer 2 calls `resolvingSymlinksInPath()` and re-validates the resolved destination (SEC-M2 — `PathValidator` alone cannot catch a symlink pointing outside the vault). Rejects absolute paths outright. Returns `Result<URL, ResolveError>`.
+- **`MCPLimits.swift`** — `enum MCPLimits`. Central security caps: `maxInputLineBytes` (10 MB — SEC-M3), `maxSearchResults` (100 — SEC-M4), `maxQueryLength` (1,000 chars — SEC-M4), `maxResponseBytes` (25 MB — SEC-M5). All constants are public and tested individually.
+- **`MCPLineReader.swift`** — `final class MCPLineReader`. Reads lines from a `FileHandle` with a hard cap of `maxLineBytes` per line (SEC-M3). A naive `readLine()` would buffer an unlimited line into RAM; this reader discards lines over the cap (emitting `.oversized`) and recovers at the next `\n` without accumulating. Strips `\r` from CRLF input. Tested via `Pipe` without launching a process.
+- **`MCPServerConfig.swift`** — `struct MCPServerConfig: Sendable`. Holds `vaultRoot` (URL) and `feedFormat` (FeedFormat). `fromEnvironment()` builds the live config: vault fixed to `~/.pasture/`, format from `PASTURE_FEED_FORMAT` env var (ADR-007 — the MCP process does NOT share `UserDefaults.standard` with the GUI app; reading `FeedFormatSettings` from here would always return the default).
+- **`MCPConfigGenerator.swift`** — `enum MCPConfigGenerator`. Produces the two registration snippets shown in Settings → MCP: `claudeCodeCommand(binaryPath:feedFormat:)` (a `claude mcp add` shell command) and `claudeDesktopJSON(binaryPath:feedFormat:)` (a JSON block for `claude_desktop_config.json`). Both inject `PASTURE_FEED_FORMAT` so the MCP server uses the same feed format as the app. Built with `JSONEncoder`, not string concatenation, to handle paths with special characters.
+- **`MCPVaultStats.swift`** — `enum MCPVaultStats`. `secretStats(vaultRoot:)` scans the entire vault via `MCPTools.enumerateVaultFiles` + `SecretScanner` and returns `SecretStats` (count of files with secrets, summary lines). Powers the "Scan vault for secrets" button in Settings → MCP (SEC-M9: consent-first, on demand only).
 
 ### Key files
 
@@ -65,10 +83,12 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 - **`MDFileManager+Import.swift`** — Extension: `importFile` (conversion via `DocumentImporter` in PastureKit; `.md` and unknown types copied as-is), `merge()`, and `scanFolder()` for recursive .md import (max 500 files).
 - **`DirectoryWatcher.swift`** — `@MainActor` class encapsulating all DispatchSource file-watching: root + per-collection sub-watchers, GCD→main hop, 0.5s debounce into a single `onChange` callback. All `nonisolated(unsafe)` watcher state lives here.
 - **`MenuBarView.swift`** — Compact popover: header with "open window" button, search, file list with checkboxes (`MenuBarFileRow`), footer with Feed button. Independent selection from main window. Feed logic delegated to `FeedService`.
-- **`SettingsView.swift`** — `TabView` with two tabs: `ExportSettingsTab` (feed format picker via `FeedFormatSettings`, export destination management via NSSavePanel, export file format picker via `ExportSettings`) and `AISettingsTab` (provider picker, API key SecureField with Keychain save/delete, model picker with pricing, test connection button). Posts `FeedFormatSettings.didChangeNotification`, `ExportSettings.didChangeNotification`, and `AISettings.didChangeNotification` on save.
+- **`SettingsView.swift`** — `TabView` with three tabs: `ExportSettingsTab` (feed format picker via `FeedFormatSettings`, export destination management via NSSavePanel, export file format picker via `ExportSettings`), `AISettingsTab` (provider picker, API key SecureField with Keychain save/delete, model picker with pricing, test connection button), and `MCPSettingsTab` (MCP server registration UI — see below). Posts `FeedFormatSettings.didChangeNotification`, `ExportSettings.didChangeNotification`, and `AISettings.didChangeNotification` on save.
+- **`SettingsView.swift` / `MCPSettingsTab`** — Third tab in Settings (Cmd+,). Three sections: (1) description of the MCP capability, (2) vault secret check ("Scan vault for secrets" button, runs `MCPVaultStats.secretStats` off the main actor and displays masked summary — consent-first, SEC-M9), (3) registration snippets — "Copy configuration (Claude Code)" and "Copy configuration (Claude Desktop)" buttons, both disabled when the embedded binary is absent. Binary path derived from `Bundle.main.bundleURL` (never hardcoded). Injects the active `FeedFormat` into the generated snippets (ADR-007).
 - **`DesignTokens.swift`** — Complete design system. All UI colors, typography, layout constants, and visual effects.
 - **`PastureApp.swift`** — App entry point. Three scenes (Window, MenuBarExtra, Settings). Menu commands: "Open in Default Editor" (Cmd+E), "Paste from Clipboard" (Cmd+Shift+V), "Toggle Ask Mode" (Cmd+Shift+A). `@NSApplicationDelegateAdaptor` for `AppDelegate`.
 - **`AppDelegate.swift`** — Prevents quit on last window close, handles Dock icon reopen. Enforces single-instance via `flock` on a lock file in `NSTemporaryDirectory()`: if the lock is already held, the new instance activates the running one and terminates itself.
+- **`main.swift`** (`Sources/pasture-mcp/`) — MCP server entry point. Creates `MCPDispatcher(config: .fromEnvironment())` and `MCPLineReader(handle: .standardInput)`, then runs a synchronous sequential loop (ADR-005): read one line → dispatch → write response + `\n` to stdout. Logs to stderr only (SEC-M7: stdout is sacred — only framed JSON-RPC goes there). Oversized lines (SEC-M3) are logged and discarded. EOF exits cleanly.
 
 ### PastureKit models
 
@@ -108,7 +128,7 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 
 **Settings → Views communication**: `SettingsView` posts `ExportSettings.didChangeNotification` and `AISettings.didChangeNotification`. `ContentView`, `MenuBarView`, and `AskView` subscribe to reload state.
 
-**Color scheme adaptation**: Static functions `Color.pastureX(_ scheme: ColorScheme)` resolve light/dark variants (including `pastureAccent(_:)`, `pastureError(_:)`, `pastureTokenBadgeText(_:)`). Never hardcode colors directly. All text/background token pairs meet WCAG AA contrast (≥4.5:1) in both schemes — keep that invariant when adding or changing tokens. Text over the brand gradient uses `pastureTextPrimaryLight` (dark), not white.
+**Color scheme adaptation**: Static functions `Color.pastureX(_ scheme: ColorScheme)` resolve light/dark variants (including `pastureAccent(_:)`, `pastureError(_:)`, `pastureSuccess(_:)`, `pastureTokenBadgeText(_:)`). Never hardcode colors directly. All text/background token pairs meet WCAG AA contrast (≥4.5:1) in both schemes — keep that invariant when adding or changing tokens. Text over the brand gradient uses `pastureTextPrimaryLight` (dark), not white. `pastureSuccess` is used for positive feedback in the AI tab (key-saved checkmark) and the MCP tab (clean vault scan result).
 
 **Ask privacy notice**: the first Ask request shows a one-time alert (persisted in `@AppStorage("askPrivacyNoticeAccepted")`) stating that selected file contents are sent to the configured provider. The model badge in the context bar carries a permanent `.help` hint with the same message.
 
@@ -142,6 +162,14 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 
 **FeedFormatSettings → Views communication**: `SettingsView` posts `FeedFormatSettings.didChangeNotification`. `FeedService` and `ContextBuilder` consumers reload via `FeedFormatSettings.feedFormat()` at call time (not cached).
 
+**MCP dispatcher boundary**: `MCPDispatcher.handle(line:)` is the sole testable entry point for the MCP server. It accepts a raw line string, returns a response line or `nil`, and never throws. All 490 tests treat this as the boundary — no process spawning required. The `main.swift` executable is thin by design (ADR-004): it only handles transport (`FileHandle` I/O, the `MCPLineReader` loop) and delegates everything else to the dispatcher.
+
+**MCP stdout is sacred**: the `pasture-mcp` process writes only framed JSON-RPC messages to stdout (one message per line, terminated by `\n`). Diagnostic output goes exclusively to stderr. Any `print()` or `Swift.print` to stdout from PastureKit code called via the MCP path would corrupt the framing. Logs use `FileHandle.standardError.write` directly (SEC-M7).
+
+**MCP configuration via environment (ADR-007)**: `pasture-mcp` reads its configuration from `ProcessInfo.processInfo.environment`, not from `UserDefaults.standard`. A CLI process launched by an MCP client does not share the app's UserDefaults domain, so `FeedFormatSettings.feedFormat()` would always return the default there. The feed format is instead controlled by the `PASTURE_FEED_FORMAT` environment variable (`xml`/`markdown`/`plainText`), which the registration snippets inject automatically. `MCPServerConfig.fromEnvironment()` is the canonical factory.
+
+**MCP tool errors vs. protocol errors**: a tool failure (file not found, path outside vault, oversized response) sets `ToolCallResult.isError = true` inside the JSON-RPC `result` object — the AI model sees and can recover from it. A protocol failure (malformed JSON, unknown method, explicit-null id) produces a JSON-RPC `error` object at the top level. These two error channels are distinct and must not be confused (SEC-M12).
+
 ### Security invariants
 
 - All file operations validated via `isInsidePasture()` which delegates to `PathValidator.isInside(target:base:)` in PastureKit — uses `standardizedFileURL.path` comparison with trailing slash guard to prevent prefix tricks. Also applied before `NSWorkspace.shared.open()` in "Open in Editor".
@@ -161,6 +189,12 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 - Preset relative paths are validated via `PathValidator.isInside` in `PresetResolver.resolve` before any file selection is applied. A stored path containing `../` is silently rejected and counted as missing — it never selects a file outside `~/.pasture/`.
 - Feed output escaping is format-dependent: XML uses CDATA (`]]>` escaped); Markdown uses dynamic fence characters chosen to avoid collision with file content; plain text uses a bare header (no structural escaping needed).
 - Secret scanning runs on rendered content (post-template substitution), not the raw template source, so a secret injected via a variable value is caught before delivery.
+- MCP path validation uses two layers: `PathValidator.isInside` catches `..` traversal (layer 1); `URL.resolvingSymlinksInPath()` + re-validation catches symlinks pointing outside the vault (layer 2, SEC-M2). Both layers must pass before any file I/O occurs in a tool.
+- MCP input lines are capped at 10 MB by `MCPLineReader` before being handed to the dispatcher. Lines exceeding the cap are discarded and logged to stderr; they never reach the JSON decoder (SEC-M3).
+- MCP search caps query length at 1,000 characters and result count at 100 files. An empty query returns an explicit empty-result message rather than dumping the entire vault (SEC-M4).
+- MCP responses for `read_file` and `feed_context` are capped at 25 MB. Content exceeding the cap returns `isError: true` without serializing the giant payload (SEC-M5).
+- The MCP server is strictly read-only. There are no tools that create, modify, or delete files. The `pasture-mcp` executable has no write path to `~/.pasture/` (SEC-M6 by design).
+- MCP secret warnings (`ToolCallResult.warning`) carry only the family name and file name, never the matched value. Content is delivered unchanged — the warning is informational, not a gate (SEC-M8, D4).
 
 ### Concurrency model
 
@@ -170,4 +204,4 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 
 ## Bundle ID & versioning
 
-Bundle ID: `com.sevecod.pasture`. Current version: **1.4.0**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).
+Bundle ID: `com.sevecod.pasture`. Current version: **1.5.0**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).
