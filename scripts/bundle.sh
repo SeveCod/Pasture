@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="Pasture"
 BUNDLE_ID="com.sevecod.pasture"
-VERSION="1.3.0"
+VERSION="1.4.0"
 BUILD_DIR="$PROJECT_DIR/.build/release"
 OUTPUT_DIR="$PROJECT_DIR/dist"
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"

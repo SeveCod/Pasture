@@ -118,8 +118,9 @@ extension Color {
     /// Warning — dark mode. Same amber as the template indicator. #D4793B
     static let pastureWarningDark = pastureTemplate
 
-    /// Error/destructive — light mode. Warm red, not cold. #C94040
-    static let pastureErrorLight = Color(red: 0.788, green: 0.251, blue: 0.251)
+    /// Error/destructive — light mode. Warm red, not cold. Darkened to ~5.0:1 on
+    /// the sidebar light background (B-1: was 4.49:1, below WCAG AA). #BF3838
+    static let pastureErrorLight = Color(red: 0.750, green: 0.220, blue: 0.220)
 
     /// Error/destructive — dark mode. Lighter warm red, ≥4.5:1 on dark backgrounds. #E07A7A
     static let pastureErrorDark = Color(red: 0.878, green: 0.478, blue: 0.478)

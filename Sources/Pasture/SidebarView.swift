@@ -238,6 +238,15 @@ struct SidebarView: View {
 
     // MARK: — Summary
 
+    /// Modelo de AI configurado, o `nil` si no hay API key para el provider activo
+    /// (sin denominador, sin regresión respecto a v1.3). La lectura del Keychain
+    /// es lógica de UI.
+    private var configuredModel: AIModel? {
+        let provider = AISettings.loadProvider()
+        guard AISettings.loadAPIKey(for: provider) != nil else { return nil }
+        return AISettings.resolveModel()
+    }
+
     private var selectionSummary: some View {
         HStack {
             let filtered = fm.filteredFiles
@@ -246,23 +255,63 @@ struct SidebarView: View {
                 for: selectedFiles.isEmpty ? filtered : Array(selectedFiles)
             )
             let label = selectedFiles.isEmpty ? "\(count) files" : "\(selectedFiles.count) selected"
+            let model = configuredModel
+            let limit = ContextLimit.state(totalTokens: totalTokens, contextWindow: model?.contextWindow)
 
             Text(label)
                 .font(.pastureSummary)
                 .foregroundStyle(Color.pastureTextSecondary(colorScheme))
             Spacer()
             HStack(spacing: 4) {
-                Image(systemName: "number")
-                    .font(.system(size: 9, weight: .semibold))
-                    .accessibilityHidden(true)
-                Text("~\(TokenEstimator.formatted(totalTokens)) tokens")
+                if limit.exceeds {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .accessibilityHidden(true)
+                } else {
+                    Image(systemName: "number")
+                        .font(.system(size: 9, weight: .semibold))
+                        .accessibilityHidden(true)
+                }
+                Text(tokenSummaryText(totalTokens: totalTokens, contextWindow: limit.contextWindow))
                     .font(.pastureSummary)
             }
-            .foregroundStyle(Color.pastureTokenBadgeText(colorScheme))
+            .foregroundStyle(limit.exceeds
+                ? Color.pastureError(colorScheme)
+                : Color.pastureTokenBadgeText(colorScheme))
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Approximately \(TokenEstimator.formatted(totalTokens)) tokens")
+            .accessibilityLabel(tokenSummaryAccessibilityLabel(
+                totalTokens: totalTokens, contextWindow: limit.contextWindow, exceeds: limit.exceeds
+            ))
+            .help(summaryHelpText(model: model, exceeds: limit.exceeds))
         }
         .padding(.horizontal, PastureLayout.summaryBarHPadding)
         .padding(.vertical, PastureLayout.summaryBarVPadding)
+    }
+
+    private func tokenSummaryText(totalTokens: Int, contextWindow: Int?) -> String {
+        if let window = contextWindow {
+            return "~\(TokenEstimator.formatted(totalTokens)) / \(TokenEstimator.formatted(window)) tokens"
+        }
+        return "~\(TokenEstimator.formatted(totalTokens)) tokens"
+    }
+
+    private func tokenSummaryAccessibilityLabel(totalTokens: Int, contextWindow: Int?, exceeds: Bool) -> String {
+        let base: String
+        if let window = contextWindow {
+            base = "Approximately \(TokenEstimator.formatted(totalTokens)) of \(TokenEstimator.formatted(window)) tokens"
+        } else {
+            base = "Approximately \(TokenEstimator.formatted(totalTokens)) tokens"
+        }
+        return exceeds ? base + ", exceeds context window" : base
+    }
+
+    /// Tooltip del resumen. Al exceder, lo señala; en estado normal con modelo
+    /// configurado, nombra el modelo del denominador (m-5). Sin modelo, sin tooltip.
+    private func summaryHelpText(model: AIModel?, exceeds: Bool) -> String {
+        guard let model else { return "" }
+        if exceeds {
+            return "Selection exceeds the context window of \(model.displayName)"
+        }
+        return "Context window of \(model.displayName)"
     }
 }

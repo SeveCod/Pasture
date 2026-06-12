@@ -5,6 +5,26 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-06-12
+
+### Added
+
+- **Pre-feed secret scanner**: Pasture scans file content for credentials before copying to clipboard, exporting to file, or sending to Ask (including the question text). Six families detected: Anthropic keys, OpenAI-style keys, GitHub tokens, AWS access keys, PEM private keys, and Slack tokens. A warning dialog lists the affected files and masked snippets; the default action is Cancel. "Continue anyway" proceeds without redacting.
+- **Selection presets**: save and restore named file selections from the toolbar and the menu bar popover. Presets store relative paths — they stay valid after renaming the library directory. Missing files (deleted since the preset was saved) surface as an actionable toast naming the first absent file and a count of the rest.
+- **Context limit indicator in sidebar**: the selection summary shows a warning when the total token count exceeds the configured model's context window. The tooltip names the model.
+- **Feed output format** (Preferences → Export → Feed Output Format): choose between XML/CDATA (default, byte-identical to previous output), Markdown (CommonMark heading + dynamic fence), and Plain text (filename header + bare content). The setting is orthogonal to the export file-format picker.
+
+### Changed
+
+- `SettingsView` Export tab now shows the Feed Output Format picker above the export-destinations list and the file-format picker.
+
+### Security
+
+- Secret scanning runs on rendered content (post-template substitution), so a credential injected via a template variable is detected before delivery.
+- Matched secret values are never logged or displayed. `SecretMatch` carries only a masked snippet (first 7 + last 4 characters; shorter secrets show only the first character).
+- Scan input capped at 2 MB per file, truncated at a valid UTF-8 character boundary.
+- Preset relative paths validated via `PathValidator.isInside` at apply time; a path escaping `~/.pasture/` via `../` is silently rejected and reported as missing.
+
 ## [1.3.0] - 2026-06-12
 
 ### Added
@@ -196,6 +216,7 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+[1.4.0]: https://github.com/SeveCod/Pasture/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/SeveCod/Pasture/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/SeveCod/Pasture/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/SeveCod/Pasture/compare/v1.1.0...v1.2.0

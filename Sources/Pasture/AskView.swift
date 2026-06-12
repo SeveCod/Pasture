@@ -376,8 +376,21 @@ struct AskView: View {
     }
 
     private func performSend() {
-        let context = fm.feedContext(files: feedTargets)
-        viewModel.send(context: context, contextTokens: contextTokens)
+        // SEC-1 — escanear contexto Y pregunta antes de abrir la conexión de red.
+        // El escaneo va por la misma FeedService compartida con ContentView, así
+        // el diálogo de secretos es uno solo en toda la app.
+        //
+        // Decisión arbitrada (UX M-2): UX propuso excluir la pregunta del escaneo
+        // por fatiga de falsos positivos. Se MANTIENE el escaneo de la pregunta: es
+        // egress real a la API de un tercero (irreversible) y el diálogo no bloquea
+        // —avisa con override—, así que el coste de un falso positivo es bajo frente
+        // al riesgo de filtrar un secreto pegado en la caja de pregunta.
+        var inputs = feedService.scanInputs(for: feedTargets, renderedContents: nil)
+        inputs.append(SecretScanner.Input(fileName: "question", content: viewModel.question))
+        feedService.guardSecrets(inputs: inputs) {
+            let context = fm.feedContext(files: feedTargets)
+            viewModel.send(context: context, contextTokens: contextTokens)
+        }
     }
 
     private func exportResponseToDisk() {

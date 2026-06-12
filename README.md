@@ -45,9 +45,13 @@ Toggle with `Cmd+Shift+A` or the toolbar button. Select files, type a question, 
 - Action bar: Copy, Save to Pasture, Export as `.md`
 - Configure provider, model, and API key in Settings → AI
 - The selected files' content is sent to the configured provider (Anthropic or OpenRouter); a one-time notice is shown before the first request
+- Context limit indicator: the selection summary warns when the token count exceeds the configured model's context window
+
+### Selection presets
+Save and restore named file selections from the toolbar (main window) or the menu bar popover. A preset records the current selection as relative paths, so it stays valid after moving the library directory. If a file referenced by a preset has been deleted, a toast names the missing file(s) and the rest of the selection is applied.
 
 ### Feed — toolbar leaf button
-Copies the active (or selected) file(s) to the clipboard wrapped for Claude.
+Copies the active (or selected) file(s) to the clipboard wrapped for Claude. Before copying, Pasture scans the content for credentials (Anthropic keys, GitHub tokens, AWS keys, PEM keys, OpenAI-style keys, Slack tokens); if any are found a warning dialog lists the affected files with masked snippets and defaults to Cancel.
 
 Single file:
 
@@ -67,6 +71,8 @@ Multiple files:
 ```
 
 If a file contains template variables, Pasture prompts for their values before copying.
+
+The default output format is XML/CDATA. You can switch to Markdown fences or plain text in Preferences → Export → Feed Output Format.
 
 ### Scan Folder
 Toolbar button. Recursively scans a directory for `.md` files and imports them into a new collection.
@@ -126,7 +132,14 @@ Sources/
 │   ├── QuestionHistory.swift  — Recent Ask questions (UserDefaults)
 │   ├── AIClient.swift         — Streaming AI client actor (Anthropic/OpenRouter)
 │   ├── KeychainStore.swift    — macOS Keychain wrapper
-│   └── SSEParser.swift        — Server-Sent Events parser
+│   ├── SSEParser.swift        — Server-Sent Events parser
+│   ├── FeedFormat.swift       — Feed payload format enum (XML/Markdown/plain text)
+│   ├── FeedFormatSettings.swift — Feed format persistence (UserDefaults)
+│   ├── SecretScanner.swift    — Pre-feed credential detector (6 families)
+│   ├── ContextLimit.swift     — Context window guard logic (sidebar indicator)
+│   ├── SelectionPreset.swift  — Named file selections (relative-path model)
+│   ├── SelectionPresetStore.swift — Preset CRUD (UserDefaults)
+│   └── PresetResolver.swift   — Relative-path → URL resolution (path-traversal guard)
 ├── Pasture/                   — SwiftUI app (executable)
 │   ├── PastureApp.swift       — App entry, scenes, menu commands
 │   ├── ContentView.swift      — Navigation, preview/ask toggle, toolbar
@@ -150,13 +163,13 @@ Sources/
 │   ├── SettingsView.swift     — Export + AI settings tabs
 │   ├── DesignTokens.swift     — Design system
 │   └── AppDelegate.swift
-└── Tests/PastureKitTests/     — 327 tests (Swift Testing framework)
+└── Tests/PastureKitTests/     — 420 tests (Swift Testing framework)
 ```
 
 No CoreData, no SwiftData, no external dependencies.
 
 ## Release
 
-**Current version: 1.3.0** (2026-06-12)
+**Current version: 1.4.0** (2026-06-12)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history of changes.

@@ -21,9 +21,27 @@ private struct ExportSettingsTab: View {
     @State private var destinations: [ExportDestination] = ExportSettings.loadDestinations()
     @State private var defaultID: UUID? = ExportSettings.defaultDestinationID()
     @State private var fileFormat: ExportFileFormat = ExportSettings.fileFormat()
+    @State private var feedFormat: FeedFormat = FeedFormatSettings.feedFormat()
 
     var body: some View {
         Form {
+            Section {
+                Picker("Feed format", selection: $feedFormat) {
+                    ForEach(FeedFormat.allCases, id: \.self) { format in
+                        Text(format.displayName).tag(format)
+                    }
+                }
+                .onChange(of: feedFormat) { _, newValue in
+                    FeedFormatSettings.setFeedFormat(newValue)
+                    NotificationCenter.default.post(name: FeedFormatSettings.didChangeNotification, object: nil)
+                }
+            } header: {
+                Text("Feed Output Format")
+            } footer: {
+                Text("Payload format for clipboard, export, and Ask context. XML is robust for model parsing; Markdown and Plain text suit chats and READMEs. Plain text is best-effort for automatic parsing.")
+                    .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+            }
+
             Section {
                 if destinations.isEmpty {
                     Text("No export destinations configured.\nAdd one to enable Feed-to-file.")

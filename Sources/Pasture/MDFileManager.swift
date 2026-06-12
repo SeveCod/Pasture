@@ -299,7 +299,7 @@ final class MDFileManager: ObservableObject {
                 content: renderedContents?[file.url] ?? file.content
             )
         }
-        return ContextBuilder.build(files: entries)
+        return ContextBuilder.build(files: entries, format: FeedFormatSettings.feedFormat())
     }
 
     func totalTokens(for files: [MDFile]) -> Int {
@@ -310,5 +310,35 @@ final class MDFileManager: ObservableObject {
 
     func exportToFile(_ context: String, to destination: ExportDestination) throws {
         try context.write(to: destination.url, atomically: true, encoding: .utf8)
+    }
+
+    // MARK: — Presets (F2)
+
+    /// Resuelve un preset a los MDFile existentes en la librería + las rutas
+    /// ausentes (no existen en disco o fueron descartadas por SEC-9). Expone los
+    /// paths concretos para un toast accionable (M-3). No borra el preset
+    /// (decisión de producto): degrada con gracia.
+    func resolve(_ preset: SelectionPreset) -> (files: [MDFile], missingPaths: [String]) {
+        let resolution = PresetResolver.resolve(relativePaths: preset.relativePaths, base: Self.pastureDir)
+        let byURL = Dictionary(uniqueKeysWithValues: files.map { ($0.url.standardizedFileURL, $0) })
+        var resolved: [MDFile] = []
+        for url in resolution.urls {
+            if let file = byURL[url] {
+                resolved.append(file)
+            }
+        }
+        let existing = Set(files.map { $0.url.standardizedFileURL })
+        let missing = PresetResolver.missingPaths(
+            relativePaths: preset.relativePaths,
+            base: Self.pastureDir,
+            existing: existing
+        )
+        return (resolved, missing)
+    }
+
+    /// Construye las rutas relativas de una selección actual, para "Guardar como
+    /// preset". Descarta ficheros fuera de `~/.pasture/` (no deberían existir).
+    func relativePaths(for selection: [MDFile]) -> [String] {
+        selection.compactMap { PresetResolver.relativePath(for: $0.url, base: Self.pastureDir) }
     }
 }
