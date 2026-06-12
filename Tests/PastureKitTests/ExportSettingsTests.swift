@@ -52,4 +52,32 @@ struct ExportSettingsTests {
         ExportSettings.setDefaultDestinationID(nil, in: defaults)
         #expect(ExportSettings.defaultDestinationID(from: defaults) == nil)
     }
+
+    @Test("File format defaults to markdown when not set")
+    func fileFormatDefault() {
+        let defaults = makeIsolatedDefaults()
+        #expect(ExportSettings.fileFormat(from: defaults) == .markdown)
+    }
+
+    @Test("File format roundtrip")
+    func fileFormatRoundtrip() {
+        let defaults = makeIsolatedDefaults()
+        ExportSettings.setFileFormat(.plainText, in: defaults)
+        #expect(ExportSettings.fileFormat(from: defaults) == .plainText)
+        ExportSettings.setFileFormat(.markdown, in: defaults)
+        #expect(ExportSettings.fileFormat(from: defaults) == .markdown)
+    }
+
+    @Test("File format falls back to markdown on unknown stored value")
+    func fileFormatUnknownValue() {
+        let defaults = makeIsolatedDefaults()
+        defaults.set("rtf", forKey: "com.sevecod.pasture.exportFileFormat")
+        #expect(ExportSettings.fileFormat(from: defaults) == .markdown)
+    }
+
+    @Test("File format extensions")
+    func fileFormatExtensions() {
+        #expect(ExportFileFormat.markdown.fileExtension == "md")
+        #expect(ExportFileFormat.plainText.fileExtension == "txt")
+    }
 }

@@ -293,9 +293,10 @@ struct ContentView: View {
         let context = fm.feedContext(files: targets)
         let panel = NSSavePanel()
         let label = targets.count == 1 ? targets[0].name : "context-\(targets.count)-files"
-        panel.nameFieldStringValue = "\(label).md"
-        panel.allowedContentTypes = [.plainText]
-        panel.message = "Export context as Markdown"
+        let format = ExportSettings.fileFormat()
+        panel.nameFieldStringValue = "\(label).\(format.fileExtension)"
+        panel.allowedContentTypes = format.allowedContentTypes
+        panel.message = "Export feed context"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try context.write(to: url, atomically: true, encoding: .utf8)

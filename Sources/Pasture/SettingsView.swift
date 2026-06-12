@@ -20,6 +20,7 @@ private struct ExportSettingsTab: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var destinations: [ExportDestination] = ExportSettings.loadDestinations()
     @State private var defaultID: UUID? = ExportSettings.defaultDestinationID()
+    @State private var fileFormat: ExportFileFormat = ExportSettings.fileFormat()
 
     var body: some View {
         Form {
@@ -47,6 +48,20 @@ private struct ExportSettingsTab: View {
                 Text("Export Destinations")
             } footer: {
                 Text("Feed writes context directly to a file instead of clipboard. Star \u{2605} marks the default destination for one-click export.")
+                    .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+            }
+
+            Section {
+                Picker("File format", selection: $fileFormat) {
+                    ForEach(ExportFileFormat.allCases, id: \.self) { format in
+                        Text(format.displayName).tag(format)
+                    }
+                }
+                .onChange(of: fileFormat) { _, newValue in
+                    ExportSettings.setFileFormat(newValue)
+                }
+            } footer: {
+                Text("Extension suggested when exporting feed context to disk.")
                     .foregroundStyle(Color.pastureTextTertiary(colorScheme))
             }
         }
@@ -102,8 +117,8 @@ private struct ExportSettingsTab: View {
 
     private func pickPath(for id: UUID) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "CONTEXT.md"
-        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = "CONTEXT.\(fileFormat.fileExtension)"
+        panel.allowedContentTypes = fileFormat.allowedContentTypes
         panel.message = "Choose where to export feed context"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if let idx = destinations.firstIndex(where: { $0.id == id }) {

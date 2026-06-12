@@ -12,6 +12,17 @@ enum DetailMode: String, CaseIterable {
     case ask
 }
 
+extension ExportFileFormat {
+    /// Tipos para NSSavePanel: el UTType de la extensión elegida primero,
+    /// para que el panel no coaccione el nombre hacia ".txt".
+    var allowedContentTypes: [UTType] {
+        switch self {
+        case .markdown: return [UTType(filenameExtension: "md") ?? .plainText, .plainText]
+        case .plainText: return [.plainText]
+        }
+    }
+}
+
 struct FileTransfer: Transferable {
     let url: URL
 

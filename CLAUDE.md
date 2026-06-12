@@ -13,7 +13,7 @@ The detail panel toggles between a read-only Markdown preview and an Ask mode fo
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
-swift test               # Run all PastureKit unit tests (289 tests, Swift Testing framework)
+swift test               # Run all PastureKit unit tests (300 tests, Swift Testing framework)
 swift test --filter TemplateEngineTests                        # Run one test suite
 swift test --filter TemplateEngineTests/renderSimpleReplacement # Run a single test
 swift run                # Build + launch the app
@@ -21,6 +21,8 @@ swift run                # Build + launch the app
 ```
 
 Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit, Combine, AppKit, Security).
+
+CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build, and tests on `macos-15` (required for the Swift 6 toolchain) on every push/PR to `main`.
 
 ## Architecture
 
@@ -30,7 +32,7 @@ Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit
 
 - **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security). All public. This is the testable module.
 - **Pasture** (`Sources/Pasture/`) — SwiftUI app. Re-exports PastureKit via `@_exported import PastureKit` in `TemplateEngine.swift`.
-- **PastureKitTests** (`Tests/PastureKitTests/`) — 289 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`).
+- **PastureKitTests** (`Tests/PastureKitTests/`) — 300 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`).
 
 ### Data flow
 
@@ -56,7 +58,7 @@ Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit
 - **`FeedService.swift`** — `@MainActor final class` shared between `ContentView` and `MenuBarView`. Encapsulates feed execution (template variable detection, clipboard copy with 60s auto-clear, file export), toast feedback, and template confirmation. Eliminates feed logic duplication between main window and menu bar.
 - **`AskView.swift`** — Ask panel: context bar (file count, tokens, model, cost), response area with Markdown rendering, input bar (TextEditor + Ask/Stop button), action bar (Copy, Save, Export .md). Includes `PulseModifier` for streaming animation.
 - **`AskViewModel.swift`** — `@MainActor final class` managing Ask state: question, responseText, isStreaming, error, provider/model selection. Coordinates `AIClient.ask()` via cancellable `streamTask`. Methods: `send()`, `stop()`, `clear()`, `copyResponse()`, `saveResponse()`, `reloadSettings()`.
-- **`MarkdownPreviewView.swift`** — Read-only Markdown preview using `AttributedString(markdown:, options: .init(interpretedSyntax: .full))`. Text selection enabled. Falls back to plain text if parsing fails.
+- **`MarkdownPreviewView.swift`** — Read-only Markdown preview using `AttributedString(markdown:, options: .init(interpretedSyntax: .full))`. Renders asynchronously via `.task(id:)` to avoid flashing the previous file's content when switching files. Text selection enabled. Falls back to plain text if parsing fails.
 - **`SidebarView.swift`** — Search bar, sort toggle (date/name), file list with collection sections, context menus, selection summary with token count.
 - **`FeedAction.swift`** — `FeedButton` (renders as plain button when no export destinations configured, or as `Menu` with `primaryAction` when destinations exist — click = default action, hold = menu with clipboard + export options) and `TemplateSheet` (variable input before feeding, adapts UI for `.scalar` vs `.list` variables).
 - **`MDFileManager.swift`** — Core file manager: state (`files`, `collections`, `searchQuery`, `lastError`), directory watching with debounced reload, CRUD (load, save, create, delete), collection management (create/move/delete), feed context delegation to `ContextBuilder`, file export. Path traversal via `isInsidePasture()` delegates to `PathValidator`. `MDFile` convenience extension for `collection` property using `pastureDir`.
@@ -73,17 +75,17 @@ Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit
 - **`TemplateVariable`** — Identifiable, Hashable, Sendable. Fields: name, defaultValue, value, `kind: VariableKind` (`.scalar` or `.list`). `listItems` computed property splits comma-separated values.
 - **`TemplateNode`** — Recursive enum representing the AST: `.text`, `.variable`, `.currentValue`, `.currentIndex`, `.ifBlock`, `.unlessBlock`, `.eachBlock`.
 - **`ExportDestination`** — `Codable`, `Sendable` struct: id, name, path, computed `url` and `isWritable`. Represents a file path where Feed can write context directly.
-- **`ExportSettings`** — Static namespace for UserDefaults persistence of export destinations and default destination ID. Fires `didChangeNotification` when settings change (consumed by `ContentView` and `MenuBarView` via `.onReceive`).
+- **`ExportSettings`** — Static namespace for UserDefaults persistence of export destinations, default destination ID, and export file format (`ExportFileFormat` enum: `.markdown`/`.plainText`, default `.markdown`; read at panel-build time, not cached). Fires `didChangeNotification` when settings change (consumed by `ContentView` and `MenuBarView` via `.onReceive`).
 - **`AIProviderKind`** — Enum: `.anthropic`, `.openRouter`. Drives API endpoint and auth header format.
-- **`AIModel`** — `Codable`, `Hashable`, `Sendable`, `Identifiable` struct: id, displayName, provider, contextWindow, inputCostPer1M, outputCostPer1M. Static catalog via `defaultModels`, lookup via `models(for:)` and `model(byID:)`. `resolve(id:preferredProvider:)` provides a safe fallback chain: exact match → first model for preferred provider → first default model.
+- **`AIModel`** — `Codable`, `Hashable`, `Sendable`, `Identifiable` struct: id, displayName, provider, contextWindow, maxOutputTokens, inputCostPer1M, outputCostPer1M. `maxOutputTokens` is per-model and passed as `max_tokens` in API requests. Static catalog via `defaultModels`, lookup via `models(for:)` and `model(byID:)`. `resolve(id:preferredProvider:)` provides a safe fallback chain: exact match → first model for preferred provider → first default model.
 - **`AISettings`** — Static namespace (same pattern as `ExportSettings`). Provider and model ID in UserDefaults; API keys in Keychain via `KeychainStore`. Fires `didChangeNotification`.
 - **`KeychainStore`** — Static methods: `save(key:value:service:)` (upsert), `load(key:service:)`, `delete(key:service:)`. Uses Security.framework. Items created with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Defines `KeychainError`.
-- **`AIClient`** — `actor` wrapping `URLSession`. `ask(question:context:model:apiKey:) -> AsyncThrowingStream<String, Error>`. Builds provider-specific requests (Anthropic: `x-api-key` + `anthropic-version`, OpenRouter: `Bearer` auth). Streams via `URLSession.bytes(for:)` + `SSEParser`. Retries automatically on 429 (rate limited) and 529 (overloaded) with exponential backoff (max 2 retries, respects `Retry-After` header, capped at 30s). HTTP error mapping: 401→invalidAPIKey, 429→rateLimited, 529→serverError.
+- **`AIClient`** — `actor` wrapping `URLSession`. `ask(question:context:model:apiKey:) -> AsyncThrowingStream<String, Error>`. Builds provider-specific requests (Anthropic: `x-api-key` + `anthropic-version`, OpenRouter: `Bearer` auth). Uses `model.maxOutputTokens` as `max_tokens`; empty-context guard skips the context prefix when no files are selected. Streams via `URLSession.bytes(for:)` + `SSEParser`. Retries automatically on 429 (rate limited) and 529 (overloaded) with exponential backoff (max 2 retries, respects `Retry-After` header, capped at 30s). HTTP error mapping: 401→invalidAPIKey, 429→rateLimited, 529→serverError.
 - **`SSEEvent`** — Sendable struct: event type + data.
 - **`SSELineBuffer`** — Sendable stateful accumulator for SSE line parsing.
 - **`SSEParser`** — Static `parse(line:buffer:) -> SSEEvent?`. Standard SSE spec: `event:`, `data:`, empty line = dispatch.
 - **`AIClientError`** — Sendable enum with 8 cases: noAPIKey, invalidAPIKey, contextTooLarge, rateLimited, timeout, serverError, networkError, invalidResponse. All with `LocalizedError` conformance.
-- **`TokenEstimator`** — Heuristic token counter (~4 chars/token). `estimatedCost(inputTokens:outputTokens:model:)` for pre-send cost calculation. `formattedCost(_:)` for display (`"<$0.001"`, `"~$0.003"`).
+- **`TokenEstimator`** — Heuristic token counter (~4 chars/token). `estimatedCost(inputTokens:outputTokens:model:)` for pre-send cost calculation. `formattedCost(_:)` for display (`"<$0.001"`, `"~$0.003"`). Public helpers `inputTokenEstimate(contextTokens:question:)` and `costEstimate(contextTokens:question:model:assumedOutputTokens:)` used by `AskViewModel`.
 - **`ContextBuilder`** — Static `build(files:) -> String`. Takes `[FileEntry]` (name + content) and produces XML context output. Handles CDATA escaping and multi-file wrapping. `MDFileManager.feedContext` delegates to this.
 - **`DOCXConverter`** — `convert(url:)` reads .doc/.docx files via `NSAttributedString` and converts to Markdown. `convertAttributedString(_:)` for direct conversion. Detects headings (font size ratio), bold/italic (font traits), and links. Collapses consecutive empty lines.
 - **`PathValidator`** — Static `isInside(target:base:) -> Bool`. Validates path containment using `standardizedFileURL.path` with trailing slash guard. `MDFileManager.isInsidePasture` delegates to this.
@@ -142,4 +144,4 @@ Zero external dependencies — everything uses Apple frameworks (SwiftUI, PDFKit
 
 ## Bundle ID & versioning
 
-Bundle ID: `com.sevecod.pasture`. Current version: **1.2.0**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). Update the `VERSION` variable there when releasing.
+Bundle ID: `com.sevecod.pasture`. Current version: **1.2.1**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).

@@ -7,6 +7,18 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Export file format setting (Markdown `.md` / Plain text `.txt`) in Preferences → Export. Default: `.md`.
+
+### Fixed
+
+- Export panels (toolbar Export and destination picker in Settings) no longer coerce the suggested `.md` filename to `.txt` — the save panel now declares the Markdown UTType first.
+
+### Internal
+
+- `ExportFileFormat` enum in PastureKit with persistence via `ExportSettings.fileFormat()`/`setFileFormat()`; 4 new tests (300 total).
+
 ## [1.2.1] - 2026-05-03
 
 ### Changed
