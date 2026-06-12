@@ -34,6 +34,10 @@ public enum AIClientError: Error, LocalizedError, Sendable {
 }
 
 public actor AIClient {
+    /// Shared instance so every caller (Ask mode, Settings test connection) uses
+    /// the same URLSession configuration — timeouts, cache policy, retry behavior.
+    public static let shared = AIClient()
+
     private let session: URLSession
 
     public init(session: URLSession? = nil) {
@@ -140,41 +144,22 @@ public actor AIClient {
     static let anthropicURL = URL(string: "https://api.anthropic.com/v1/messages")!
     static let openRouterURL = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
 
+    /// Single builder for both providers — the JSON body is identical; only the
+    /// endpoint URL and auth headers differ per provider.
     static func buildRequest(question: String, context: String, model: AIModel, apiKey: String) throws -> URLRequest {
+        var request: URLRequest
         switch model.provider {
         case .anthropic:
-            return try buildAnthropicRequest(question: question, context: context, model: model, apiKey: apiKey)
+            request = URLRequest(url: anthropicURL)
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         case .openRouter:
-            return try buildOpenRouterRequest(question: question, context: context, model: model, apiKey: apiKey)
+            request = URLRequest(url: openRouterURL)
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("Pasture", forHTTPHeaderField: "X-Title")
         }
-    }
-
-    private static func buildAnthropicRequest(question: String, context: String, model: AIModel, apiKey: String) throws -> URLRequest {
-        var request = URLRequest(url: anthropicURL)
         request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-
-        let userContent = context.isEmpty ? question : "\(context)\n\n\(question)"
-        let body: [String: Any] = [
-            "model": model.id,
-            "max_tokens": model.maxOutputTokens,
-            "stream": true,
-            "messages": [
-                ["role": "user", "content": userContent]
-            ]
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        return request
-    }
-
-    private static func buildOpenRouterRequest(question: String, context: String, model: AIModel, apiKey: String) throws -> URLRequest {
-        var request = URLRequest(url: openRouterURL)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.setValue("Pasture", forHTTPHeaderField: "X-Title")
 
         let userContent = context.isEmpty ? question : "\(context)\n\n\(question)"
         let body: [String: Any] = [

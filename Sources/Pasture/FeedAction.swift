@@ -66,7 +66,7 @@ struct FeedButton: View {
             Text(feedLabel)
                 .font(.system(.caption, weight: .medium))
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Color.pastureTextPrimaryLight)
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(
@@ -89,7 +89,7 @@ struct FeedButton: View {
             Text(feedLabel)
                 .font(.pastureToolbarLabel)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Color.pastureTextPrimaryLight)
         .padding(.horizontal, PastureLayout.feedButtonHPadding)
         .padding(.vertical, PastureLayout.feedButtonVPadding)
         .background(
@@ -154,7 +154,7 @@ struct TemplateSheet: View {
 
             Text("~\(TokenEstimator.formatted(totalTokens)) tokens")
                 .font(.pastureTokenBadge)
-                .foregroundStyle(Color.pastureTokenBadge)
+                .foregroundStyle(Color.pastureTokenBadgeText(colorScheme))
 
             HStack(spacing: PastureLayout.sheetButtonSpacing) {
                 Button("Cancel", action: onCancel)
@@ -167,7 +167,7 @@ struct TemplateSheet: View {
                             .accessibilityHidden(true)
                         Text("Feed")
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.pastureTextPrimaryLight)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
                     .background(LinearGradient.pastureFeedButton)

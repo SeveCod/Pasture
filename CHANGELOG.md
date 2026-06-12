@@ -5,19 +5,47 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.0] - 2026-06-12
 
 ### Added
 
 - Export file format setting (Markdown `.md` / Plain text `.txt`) in Preferences → Export. Default: `.md`.
+- Context window usage indicator in Ask mode: the context bar shows `~Xk / Yk tokens` colored green/amber/red by occupancy of the model's context window.
+- One-time privacy notice before the first Ask request, plus a persistent hint on the model badge, stating that selected file contents are sent to the configured provider (Anthropic/OpenRouter).
+- Confirmation alert before deleting an empty collection (consistent with file deletion).
+- Feedback toasts now distinguish errors (warning icon, red) from success (checkmark, green).
+- Name input sheets (new file, merge, new collection) focus the text field automatically.
+- Rename files and collections from the sidebar context menus (new `Rename…` items with pre-filled name sheet). Renaming keeps the active selection pointing at the renamed file.
+- Question history in Ask mode: the last 10 questions are persisted and available from a clock menu next to the input field, including a "Clear Recent Questions" action (GDPR right to erasure).
+
+### Changed
+
+- **Accessibility**: design tokens reworked to meet WCAG AA contrast (≥4.5:1) in both color schemes — tertiary text, token badge text, accent, and error colors are now scheme-adaptive; Feed/Ask button text changed from white to dark over the brand gradient.
 
 ### Fixed
 
+- Empty collections containing only hidden files (e.g. `.DS_Store` created by Finder) can now be deleted — emptiness is checked via `FileLibrary.visibleContents` (regression-tested).
+- Importing a PDF without extractable text (scanned without OCR) now reports an error instead of silently creating an empty `.md` file.
+- Selection reconciliation after external file changes no longer falls back to name matching, which could silently select the wrong file after an external rename.
 - Export panels (toolbar Export and destination picker in Settings) no longer coerce the suggested `.md` filename to `.txt` — the save panel now declares the Markdown UTType first.
+
+### Performance
+
+- Library scans no longer block the UI: `loadFiles()` runs disk I/O off the main actor via the new `FileLibrary.load(at:)` (async); a new reload cancels the in-flight one.
+- Search results are cached (`filteredFiles` recomputed only when files or the query change, not on every SwiftUI render).
 
 ### Internal
 
-- `ExportFileFormat` enum in PastureKit with persistence via `ExportSettings.fileFormat()`/`setFileFormat()`; 4 new tests (300 total).
+- `ExportFileFormat` enum in PastureKit with persistence via `ExportSettings.fileFormat()`/`setFileFormat()`.
+- New PastureKit components extracted from the UI target for testability: `FileLibrary` (filesystem queries) and `DocumentImporter` (PDF/CSV/DOCX conversion). 21 new tests (321 total).
+- `DirectoryWatcher` extracted from `MDFileManager`: all DispatchSource watching state (`nonisolated(unsafe)`) now lives in one single-responsibility type; the internal NotificationCenter channel was removed.
+- `MDFile.matches(query:)` — single search predicate shared by main window and menu bar (removes duplicated filter logic).
+- `AIClient.shared` — Ask mode and the Settings connection test now use the same session configuration; the per-provider request builders were unified into one parameterized `buildRequest`.
+- `AskView` toasts routed through the shared `FeedService` (removes duplicated toast state/timer).
+- `MDFileManager.resolveTargetDirectory` reports directory-creation failures instead of silently swallowing them.
+- `TokenEstimator.estimate`: `CharacterSet.alphanumerics` captured once per call instead of being rebuilt in the inner loop.
+- `SidebarView.sortedFiles`: removed redundant re-sort in date mode (`fm.files` is already kept sorted by date).
+- New adaptive color helpers: `pastureAccent(_:)`, `pastureError(_:)`, `pastureTokenBadgeText(_:)`.
 
 ## [1.2.1] - 2026-05-03
 
@@ -168,7 +196,7 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/SeveCod/Pasture/compare/v1.2.1...HEAD
+[1.3.0]: https://github.com/SeveCod/Pasture/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/SeveCod/Pasture/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/SeveCod/Pasture/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/SeveCod/Pasture/compare/v1.0.0...v1.1.0

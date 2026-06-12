@@ -23,6 +23,29 @@ import Foundation
         )
     }
 
+    // MARK: - matches(query:)
+
+    @Test func emptyQueryMatchesEverything() {
+        let file = makeFile(content: "anything")
+        #expect(file.matches(query: ""))
+    }
+
+    @Test func matchesByNameCaseInsensitive() {
+        let file = makeFile(name: "MeetingNotes", content: "irrelevant")
+        #expect(file.matches(query: "meeting"))
+        #expect(file.matches(query: "NOTES"))
+    }
+
+    @Test func matchesByContentCaseInsensitive() {
+        let file = makeFile(name: "x", content: "The Quick Brown Fox")
+        #expect(file.matches(query: "quick brown"))
+    }
+
+    @Test func nonMatchingQueryReturnsFalse() {
+        let file = makeFile(name: "notes", content: "hello world")
+        #expect(!file.matches(query: "zebra"))
+    }
+
     // MARK: - Memberwise init
 
     @Test func memberwiseInitSetsAllFields() {

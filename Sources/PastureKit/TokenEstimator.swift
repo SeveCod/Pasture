@@ -4,6 +4,8 @@ public enum TokenEstimator {
     public static func estimate(_ text: String) -> Int {
         guard !text.isEmpty else { return 0 }
         var count = 0
+        // Capture once: CharacterSet.alphanumerics is rebuilt on every access
+        let alphanumerics = CharacterSet.alphanumerics
         let scalars = text.unicodeScalars
         var i = scalars.startIndex
         while i < scalars.endIndex {
@@ -12,9 +14,9 @@ public enum TokenEstimator {
                 i = scalars.index(after: i)
                 continue
             }
-            if CharacterSet.alphanumerics.contains(c) {
+            if alphanumerics.contains(c) {
                 var len = 0
-                while i < scalars.endIndex && CharacterSet.alphanumerics.contains(scalars[i]) {
+                while i < scalars.endIndex && alphanumerics.contains(scalars[i]) {
                     len += 1
                     i = scalars.index(after: i)
                 }

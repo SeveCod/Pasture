@@ -28,6 +28,14 @@ public struct MDFile: Identifiable, Hashable, Sendable {
         self.hasTemplateVars = TemplateEngine.hasVariables(in: self.content)
     }
 
+    /// Single search predicate shared by the main window and the menu bar popover.
+    /// Empty query matches everything. Case-insensitive over name and content.
+    public func matches(query: String) -> Bool {
+        guard !query.isEmpty else { return true }
+        return name.localizedCaseInsensitiveContains(query) ||
+               content.localizedCaseInsensitiveContains(query)
+    }
+
     public func collection(relativeTo base: URL) -> String? {
         let parentDir = url.deletingLastPathComponent()
         let basePath = base.standardizedFileURL.path

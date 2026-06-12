@@ -28,8 +28,11 @@ extension Color {
     // The primary interactive color. A warm olive-sage that feels organic,
     // not the electric blue of default macOS. Accessible on both light/dark.
 
-    /// Primary accent for buttons, links, focus rings. #6B9F6B
-    static let pastureAccent = Color(red: 0.420, green: 0.624, blue: 0.420)
+    /// Primary accent — light mode. Deep sage, ≥4.5:1 on all light backgrounds. #3E7A3E
+    static let pastureAccentLight = Color(red: 0.243, green: 0.478, blue: 0.243)
+
+    /// Primary accent — dark mode. #6B9F6B
+    static let pastureAccentDark = Color(red: 0.420, green: 0.624, blue: 0.420)
 
     /// Accent hover/pressed — slightly deeper. #5A8C5A
     static let pastureAccentDeep = Color(red: 0.353, green: 0.549, blue: 0.353)
@@ -64,16 +67,19 @@ extension Color {
     /// Secondary text — dark mode. #9E9E98
     static let pastureTextSecondaryDark = Color(red: 0.620, green: 0.620, blue: 0.596)
 
-    /// Tertiary text — light mode. Lightest readable gray. #9A9A92
-    static let pastureTextTertiaryLight = Color(red: 0.604, green: 0.604, blue: 0.573)
+    /// Tertiary text — light mode. Lightest gray that keeps ≥4.5:1 on all light backgrounds. #666660
+    static let pastureTextTertiaryLight = Color(red: 0.400, green: 0.400, blue: 0.376)
 
-    /// Tertiary text — dark mode. #6B6B65
-    static let pastureTextTertiaryDark = Color(red: 0.420, green: 0.420, blue: 0.396)
+    /// Tertiary text — dark mode. ≥4.5:1 on all dark backgrounds. #A6A6A0
+    static let pastureTextTertiaryDark = Color(red: 0.651, green: 0.651, blue: 0.627)
 
     // MARK: Semantic Colors
 
-    /// Token count badge text and background tint. Muted sage. #7BA57B
-    static let pastureTokenBadge = Color(red: 0.482, green: 0.647, blue: 0.482)
+    /// Token count badge text — light mode. Deep sage, ≥4.5:1 on the badge background. #3E6B3E
+    static let pastureTokenBadgeTextLight = Color(red: 0.243, green: 0.420, blue: 0.243)
+
+    /// Token count badge text — dark mode. ≥4.5:1 on the dark badge background. #8FBF8F
+    static let pastureTokenBadgeTextDark = Color(red: 0.561, green: 0.749, blue: 0.561)
 
     /// Token count badge background — very light sage wash. #EDF5ED (light) / #2A3A2A (dark)
     static let pastureTokenBadgeBgLight = Color(red: 0.929, green: 0.961, blue: 0.929)
@@ -106,8 +112,17 @@ extension Color {
 
     static let pastureGrassOrange = pastureTemplate
 
-    /// Error/destructive. Warm red, not cold. #C94040
-    static let pastureError = Color(red: 0.788, green: 0.251, blue: 0.251)
+    /// Warning — light mode. Deep amber, ≥4.5:1 on light backgrounds. #8F4F1A
+    static let pastureWarningLight = Color(red: 0.561, green: 0.310, blue: 0.102)
+
+    /// Warning — dark mode. Same amber as the template indicator. #D4793B
+    static let pastureWarningDark = pastureTemplate
+
+    /// Error/destructive — light mode. Warm red, not cold. #C94040
+    static let pastureErrorLight = Color(red: 0.788, green: 0.251, blue: 0.251)
+
+    /// Error/destructive — dark mode. Lighter warm red, ≥4.5:1 on dark backgrounds. #E07A7A
+    static let pastureErrorDark = Color(red: 0.878, green: 0.478, blue: 0.478)
 
     /// Success. Uses our sage family. #5A9F5A
     static let pastureSuccess = Color(red: 0.353, green: 0.624, blue: 0.353)
@@ -160,6 +175,26 @@ extension Color {
     /// Token badge background — adapts to color scheme.
     static func pastureTokenBadgeBg(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? .pastureTokenBadgeBgDark : .pastureTokenBadgeBgLight
+    }
+
+    /// Token badge text — adapts to color scheme.
+    static func pastureTokenBadgeText(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? .pastureTokenBadgeTextDark : .pastureTokenBadgeTextLight
+    }
+
+    /// Primary accent — adapts to color scheme.
+    static func pastureAccent(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? .pastureAccentDark : .pastureAccentLight
+    }
+
+    /// Error/destructive — adapts to color scheme.
+    static func pastureError(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? .pastureErrorDark : .pastureErrorLight
+    }
+
+    /// Warning — adapts to color scheme.
+    static func pastureWarning(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? .pastureWarningDark : .pastureWarningLight
     }
 
     /// Template indicator background — adapts to color scheme.

@@ -101,7 +101,7 @@ struct ContentView: View {
         .animation(.easeInOut(duration: PastureEffects.animationStandard), value: feedService.feedbackMessage)
         .onChange(of: fm.lastError) { _, error in
             if let error {
-                feedService.showFeedback(error)
+                feedService.showFeedback(error, isError: true)
                 fm.lastError = nil
             }
         }
@@ -132,14 +132,14 @@ struct ContentView: View {
                 PastureEmptyState()
             }
         case .ask:
-            AskView(viewModel: askViewModel, feedTargets: feedTargets)
+            AskView(viewModel: askViewModel, feedTargets: feedTargets, feedService: feedService)
         }
     }
 
     @ViewBuilder
     private var feedbackOverlay: some View {
         if let msg = feedService.feedbackMessage {
-            FeedbackToast(message: msg)
+            FeedbackToast(message: msg, isError: feedService.feedbackIsError)
         }
     }
 
@@ -215,14 +215,8 @@ struct ContentView: View {
             )
 
             Button {
-                let previousURL = activeFile?.url
+                // Async reload; selection is reconciled by onChange(of: fm.files)
                 fm.loadFiles()
-                if let url = previousURL {
-                    activeFile = fm.files.first { $0.url == url }
-                    if let active = activeFile {
-                        selectedFiles = [active]
-                    }
-                }
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
@@ -302,7 +296,7 @@ struct ContentView: View {
             try context.write(to: url, atomically: true, encoding: .utf8)
             feedService.showFeedback("Exported to \(url.lastPathComponent)")
         } catch {
-            feedService.showFeedback("Export failed: \(error.localizedDescription)")
+            feedService.showFeedback("Export failed: \(error.localizedDescription)", isError: true)
         }
     }
 
@@ -330,17 +324,15 @@ struct ContentView: View {
     }
 
     private func reconcileSelection(with newFiles: [MDFile]) {
-        if let active = activeFile {
-            if !newFiles.contains(active) {
-                activeFile = newFiles.first { $0.url == active.url }
-                    ?? newFiles.first { $0.name == active.name }
-            }
+        // Reconcile by URL only. A name-based fallback could silently select the
+        // wrong file after an external rename (names are not guaranteed unique).
+        if let active = activeFile, !newFiles.contains(active) {
+            activeFile = newFiles.first { $0.url == active.url }
         }
         if !selectedFiles.isEmpty {
             let reconciled = selectedFiles.compactMap { selected -> MDFile? in
                 if newFiles.contains(selected) { return selected }
                 return newFiles.first { $0.url == selected.url }
-                    ?? newFiles.first { $0.name == selected.name }
             }
             selectedFiles = Set(reconciled)
         }

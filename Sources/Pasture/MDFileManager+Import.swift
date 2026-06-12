@@ -1,22 +1,23 @@
 import Foundation
-import PDFKit
 import PastureKit
 
 extension MDFileManager {
 
     // MARK: — Import
 
+    /// Imports a file into the library. Convertible documents (PDF, CSV, DOCX/DOC)
+    /// go through `DocumentImporter`; anything else is copied as Markdown.
     @discardableResult
     func importFile(from sourceURL: URL, collection: String? = nil) -> MDFile? {
-        switch sourceURL.pathExtension.lowercased() {
-        case "pdf":
-            return importPDF(from: sourceURL, collection: collection)
-        case "csv":
-            return importCSV(from: sourceURL, collection: collection)
-        case "docx", "doc":
-            return importDOCX(from: sourceURL, collection: collection)
-        default:
-            return importMarkdown(from: sourceURL, collection: collection)
+        do {
+            guard let markdown = try DocumentImporter.markdownContent(for: sourceURL) else {
+                return importMarkdown(from: sourceURL, collection: collection)
+            }
+            let name = sourceURL.deletingPathExtension().lastPathComponent
+            return create(name: name, content: markdown, collection: collection)
+        } catch {
+            lastError = error.localizedDescription
+            return nil
         }
     }
 
@@ -33,7 +34,7 @@ extension MDFileManager {
             return nil
         }
         let ext = sourceURL.pathExtension
-        let dest = Self.deduplicatedURL(baseName: cleanName, ext: ext, in: targetDir)
+        let dest = FileLibrary.deduplicatedURL(baseName: cleanName, ext: ext, in: targetDir)
         guard Self.isInsidePasture(dest) else { return nil }
 
         do {
@@ -43,46 +44,6 @@ extension MDFileManager {
             return newFile
         } catch {
             lastError = "Failed to import \(sourceURL.lastPathComponent): \(error.localizedDescription)"
-            return nil
-        }
-    }
-
-    @discardableResult
-    func importPDF(from sourceURL: URL, collection: String? = nil) -> MDFile? {
-        guard let doc = PDFDocument(url: sourceURL) else {
-            lastError = "Failed to open PDF: \(sourceURL.lastPathComponent)"
-            return nil
-        }
-        let pages = (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }
-        let text = pages.joined(separator: "\n\n")
-        let name = sourceURL.deletingPathExtension().lastPathComponent
-        return create(name: name, content: text, collection: collection)
-    }
-
-    @discardableResult
-    func importCSV(from sourceURL: URL, collection: String? = nil) -> MDFile? {
-        let csvText: String
-        if let utf8 = try? String(contentsOf: sourceURL, encoding: .utf8) {
-            csvText = utf8
-        } else if let latin1 = try? String(contentsOf: sourceURL, encoding: .isoLatin1) {
-            csvText = latin1
-        } else {
-            lastError = "Failed to read CSV: \(sourceURL.lastPathComponent)"
-            return nil
-        }
-        let markdown = CSVConverter.convert(csvText)
-        let name = sourceURL.deletingPathExtension().lastPathComponent
-        return create(name: name, content: markdown, collection: collection)
-    }
-
-    @discardableResult
-    func importDOCX(from sourceURL: URL, collection: String? = nil) -> MDFile? {
-        do {
-            let markdown = try DOCXConverter.convert(url: sourceURL)
-            let name = sourceURL.deletingPathExtension().lastPathComponent
-            return create(name: name, content: markdown, collection: collection)
-        } catch {
-            lastError = "Failed to import DOCX: \(error.localizedDescription)"
             return nil
         }
     }

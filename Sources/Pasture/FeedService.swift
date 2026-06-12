@@ -7,6 +7,7 @@ final class FeedService: ObservableObject {
     @Published var showTemplateSheet = false
     @Published var templateVariables: [TemplateVariable] = []
     @Published var feedbackMessage: String?
+    @Published var feedbackIsError = false
 
     private(set) var pendingFeedTargets: [MDFile] = []
     private(set) var pendingDestination: ExportDestination?
@@ -64,7 +65,7 @@ final class FeedService: ObservableObject {
                 try fm.exportToFile(context, to: dest)
                 showFeedback("\(dest.name) \u{2190} \(label) \u{b7} \(tokenLabel)")
             } catch {
-                showFeedback("Export failed: \(error.localizedDescription)")
+                showFeedback("Export failed: \(error.localizedDescription)", isError: true)
             }
         } else {
             copyToClipboard(context, message: "Copied \(label) \u{b7} \(tokenLabel)")
@@ -87,8 +88,9 @@ final class FeedService: ObservableObject {
         }
     }
 
-    func showFeedback(_ message: String) {
+    func showFeedback(_ message: String, isError: Bool = false) {
         feedbackDismissTask?.cancel()
+        feedbackIsError = isError
         withAnimation { feedbackMessage = message }
         feedbackDismissTask = Task {
             try? await Task.sleep(for: .seconds(PastureLayout.toastDismissDelay))

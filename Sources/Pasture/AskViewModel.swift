@@ -11,10 +11,11 @@ final class AskViewModel: ObservableObject {
     @Published private(set) var selectedProvider: AIProviderKind = AISettings.loadProvider()
     @Published private(set) var selectedModelID: String = AISettings.loadModelID()
     @Published private(set) var hasAPIKey: Bool = false
+    @Published private(set) var questionHistory: [String] = QuestionHistory.load()
 
     static let responseFilenamePrefixLength = 40
 
-    private let client = AIClient()
+    private let client = AIClient.shared
     private var streamTask: Task<Void, Never>?
 
     init() {
@@ -57,6 +58,8 @@ final class AskViewModel: ObservableObject {
         isStreaming = true
 
         let q = question
+        QuestionHistory.record(q)
+        questionHistory = QuestionHistory.load()
 
         streamTask = Task {
             do {
@@ -98,6 +101,11 @@ final class AskViewModel: ObservableObject {
         let sanitized = FilenameSanitizer.sanitize(prefix)
         let name = sanitized.isEmpty ? "ask-response" : "ask-\(sanitized)"
         _ = fm.create(name: name, content: responseText, collection: collection)
+    }
+
+    func clearQuestionHistory() {
+        QuestionHistory.clear()
+        questionHistory = []
     }
 
     func reloadSettings() {

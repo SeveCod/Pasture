@@ -11,7 +11,7 @@ struct MenuBarFileRow: View {
         Button(action: onToggle) {
             HStack(spacing: 8) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? Color.pastureAccent : Color.pastureTextTertiary(colorScheme))
+                    .foregroundStyle(isSelected ? Color.pastureAccent(colorScheme) : Color.pastureTextTertiary(colorScheme))
                     .font(.system(size: 13))
                     .accessibilityHidden(true)
 
@@ -31,7 +31,7 @@ struct MenuBarFileRow: View {
 
                 Text(TokenEstimator.formatted(file.tokens))
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(Color.pastureTokenBadge)
+                    .foregroundStyle(Color.pastureTokenBadgeText(colorScheme))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 4)

@@ -18,7 +18,7 @@ struct EditorStatusBar: View {
             if let collection = file.collection {
                 Text(collection)
                     .font(.pastureStatusBar)
-                    .foregroundStyle(Color.pastureTokenBadge)
+                    .foregroundStyle(Color.pastureTokenBadgeText(colorScheme))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(
@@ -40,7 +40,7 @@ struct EditorStatusBar: View {
                     Text("Open in Editor")
                         .font(.pastureStatusBar)
                 }
-                .foregroundStyle(Color.pastureAccent)
+                .foregroundStyle(Color.pastureAccent(colorScheme))
             }
             .buttonStyle(.plain)
             .help("Open in default editor (Cmd+E)")
@@ -48,7 +48,7 @@ struct EditorStatusBar: View {
 
             Text("~\(TokenEstimator.formatted(file.tokens)) tokens")
                 .font(.pastureTokenCount)
-                .foregroundStyle(Color.pastureTokenBadge)
+                .foregroundStyle(Color.pastureTokenBadgeText(colorScheme))
         }
         .padding(.horizontal, PastureLayout.statusBarHPadding)
         .padding(.vertical, PastureLayout.statusBarVPadding)

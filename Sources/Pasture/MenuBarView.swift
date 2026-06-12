@@ -11,13 +11,11 @@ struct MenuBarView: View {
     @State private var exportDestinations: [ExportDestination] = ExportSettings.loadDestinations()
     @StateObject private var feedService = FeedService()
 
+    // Search is intentionally independent from the main window's, but the
+    // predicate itself is shared (MDFile.matches) so both stay consistent.
     private var filteredFiles: [MDFile] {
         guard !searchText.isEmpty else { return fm.files }
-        let q = searchText
-        return fm.files.filter {
-            $0.name.localizedCaseInsensitiveContains(q) ||
-            $0.content.localizedCaseInsensitiveContains(q)
-        }
+        return fm.files.filter { $0.matches(query: searchText) }
     }
 
     private var feedTargets: [MDFile] {
@@ -74,7 +72,7 @@ struct MenuBarView: View {
                     Text("Open")
                         .font(.system(.caption, weight: .medium))
                 }
-                .foregroundStyle(Color.pastureAccent)
+                .foregroundStyle(Color.pastureAccent(colorScheme))
             }
             .buttonStyle(.plain)
             .help("Open main window")
@@ -183,7 +181,7 @@ struct MenuBarView: View {
     @ViewBuilder
     private var feedbackOverlay: some View {
         if let msg = feedService.feedbackMessage {
-            FeedbackToast(message: msg)
+            FeedbackToast(message: msg, isError: feedService.feedbackIsError)
         }
     }
 }

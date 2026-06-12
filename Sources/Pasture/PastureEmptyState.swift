@@ -29,7 +29,7 @@ struct PastureEmptyState: View {
 
             Text("Use {{VARIABLE}} or {{VAR=default}} for templates")
                 .font(.pastureEmptyHint)
-                .foregroundStyle(Color.pastureTextTertiary(colorScheme).opacity(0.7))
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.pastureEditor(colorScheme))
@@ -38,12 +38,13 @@ struct PastureEmptyState: View {
 
 struct FeedbackToast: View {
     let message: String
+    var isError: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color.pastureSuccess)
+            Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(isError ? Color.pastureError(colorScheme) : Color.pastureSuccess)
             Text(message)
                 .font(.callout)
                 .foregroundStyle(Color.pastureTextPrimary(colorScheme))

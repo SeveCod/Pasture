@@ -5,12 +5,28 @@ import PastureKit
 struct AskView: View {
     @ObservedObject var viewModel: AskViewModel
     let feedTargets: [MDFile]
+    /// Shared with ContentView — toasts surface through its feedback overlay.
+    @ObservedObject var feedService: FeedService
     @EnvironmentObject private var fm: MDFileManager
     @Environment(\.colorScheme) private var colorScheme
-    @State private var savedFeedback: String?
-    @State private var feedbackDismissTask: Task<Void, Never>?
+    @AppStorage("askPrivacyNoticeAccepted") private var privacyNoticeAccepted = false
+    @State private var showPrivacyNotice = false
 
     private var contextTokens: Int { fm.totalTokens(for: feedTargets) }
+
+    private var providerName: String {
+        viewModel.resolvedModel.provider == .anthropic ? "Anthropic" : "OpenRouter"
+    }
+
+    /// Green below 50% of the model's context window, amber up to 80%, red above.
+    private var contextUsageColor: Color {
+        let window = viewModel.resolvedModel.contextWindow
+        guard window > 0 else { return Color.pastureTokenBadgeText(colorScheme) }
+        let ratio = Double(contextTokens) / Double(window)
+        if ratio > 0.8 { return Color.pastureError(colorScheme) }
+        if ratio > 0.5 { return Color.pastureWarning(colorScheme) }
+        return Color.pastureTokenBadgeText(colorScheme)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,10 +40,14 @@ struct AskView: View {
         .onReceive(NotificationCenter.default.publisher(for: AISettings.didChangeNotification)) { _ in
             viewModel.reloadSettings()
         }
-        .overlay(alignment: .bottom) {
-            if let msg = savedFeedback {
-                FeedbackToast(message: msg)
+        .alert("Send files to \(providerName)?", isPresented: $showPrivacyNotice) {
+            Button("Send") {
+                privacyNoticeAccepted = true
+                performSend()
             }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Ask sends the full content of the selected files to \(providerName) to generate a response. This notice is shown only once.")
         }
     }
 
@@ -46,9 +66,11 @@ struct AskView: View {
             Text("\u{b7}")
                 .foregroundStyle(Color.pastureTextTertiary(colorScheme))
 
-            Text("~\(TokenEstimator.formatted(contextTokens)) tokens")
+            Text("~\(TokenEstimator.formatted(contextTokens)) / \(TokenEstimator.formatted(viewModel.resolvedModel.contextWindow)) tokens")
                 .font(.pastureTokenCount)
-                .foregroundStyle(Color.pastureTokenBadge)
+                .foregroundStyle(contextUsageColor)
+                .help("Estimated context size vs. the model's context window")
+                .accessibilityLabel("Approximately \(TokenEstimator.formatted(contextTokens)) of \(TokenEstimator.formatted(viewModel.resolvedModel.contextWindow)) tokens used")
 
             Spacer()
 
@@ -56,24 +78,31 @@ struct AskView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(Color.pastureError)
+                        .foregroundStyle(Color.pastureError(colorScheme))
                         .accessibilityHidden(true)
                     Text("No API key")
                         .font(.pastureStatusBar)
-                        .foregroundStyle(Color.pastureError)
+                        .foregroundStyle(Color.pastureError(colorScheme))
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Warning: No API key configured")
             } else {
-                Text(viewModel.resolvedModel.displayName)
-                    .font(.pastureStatusBar)
-                    .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(
-                        Color.pastureTokenBadgeBg(colorScheme),
-                        in: RoundedRectangle(cornerRadius: PastureEffects.cornerRadiusSmall)
-                    )
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.forward.circle")
+                        .font(.system(size: 9))
+                        .accessibilityHidden(true)
+                    Text(viewModel.resolvedModel.displayName)
+                }
+                .font(.pastureStatusBar)
+                .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(
+                    Color.pastureTokenBadgeBg(colorScheme),
+                    in: RoundedRectangle(cornerRadius: PastureEffects.cornerRadiusSmall)
+                )
+                .help("Selected file contents are sent to \(providerName) when you ask")
+                .accessibilityLabel("Model \(viewModel.resolvedModel.displayName). Selected file contents are sent to \(providerName) when you ask")
 
                 Text(viewModel.costEstimate(for: contextTokens))
                     .font(.pastureTokenCount)
@@ -147,7 +176,7 @@ struct AskView: View {
     private var streamingIndicator: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(Color.pastureAccent)
+                .fill(Color.pastureAccent(colorScheme))
                 .frame(width: 6, height: 6)
                 .opacity(0.7)
                 .modifier(PulseModifier(speed: PastureLayout.streamingPulseSpeed))
@@ -162,15 +191,15 @@ struct AskView: View {
     private func errorView(_ error: AIClientError) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(Color.pastureError)
+                .foregroundStyle(Color.pastureError(colorScheme))
                 .accessibilityHidden(true)
             Text(error.localizedDescription)
                 .font(.callout)
-                .foregroundStyle(Color.pastureError)
+                .foregroundStyle(Color.pastureError(colorScheme))
         }
         .padding(12)
         .background(
-            Color.pastureError.opacity(0.08),
+            Color.pastureError(colorScheme).opacity(0.08),
             in: RoundedRectangle(cornerRadius: PastureEffects.cornerRadius)
         )
         .accessibilityElement(children: .combine)
@@ -213,25 +242,25 @@ struct AskView: View {
 
             Button {
                 viewModel.copyResponse()
-                showSavedFeedback("Copied to clipboard")
+                feedService.showFeedback("Copied to clipboard")
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
                     .font(.pastureStatusBar)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.pastureAccent)
+            .foregroundStyle(Color.pastureAccent(colorScheme))
             .accessibilityLabel("Copy response")
             .accessibilityHint("Copies the AI response to the clipboard")
 
             Button {
                 viewModel.saveResponse(to: fm, collection: feedTargets.first?.collection)
-                showSavedFeedback("Saved to Pasture")
+                feedService.showFeedback("Saved to Pasture")
             } label: {
                 Label("Save", systemImage: "square.and.arrow.down")
                     .font(.pastureStatusBar)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.pastureAccent)
+            .foregroundStyle(Color.pastureAccent(colorScheme))
             .accessibilityLabel("Save response to Pasture")
             .accessibilityHint("Saves the AI response as a new file in Pasture")
 
@@ -242,7 +271,7 @@ struct AskView: View {
                     .font(.pastureStatusBar)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.pastureAccent)
+            .foregroundStyle(Color.pastureAccent(colorScheme))
             .accessibilityLabel("Export response as Markdown")
             .accessibilityHint("Opens a save dialog to export the response as a Markdown file")
         }
@@ -255,6 +284,30 @@ struct AskView: View {
 
     private var inputBar: some View {
         HStack(spacing: 8) {
+            if !viewModel.questionHistory.isEmpty {
+                Menu {
+                    ForEach(viewModel.questionHistory, id: \.self) { entry in
+                        Button {
+                            viewModel.question = entry
+                        } label: {
+                            Text(entry.count > 60 ? entry.prefix(60) + "\u{2026}" : entry)
+                        }
+                    }
+                    Divider()
+                    Button("Clear Recent Questions", role: .destructive) {
+                        viewModel.clearQuestionHistory()
+                    }
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Recent questions")
+                .accessibilityLabel("Recent questions")
+            }
+
             TextField("Ask about your files\u{2026}", text: $viewModel.question, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
@@ -270,7 +323,7 @@ struct AskView: View {
                 Button(action: viewModel.stop) {
                     Image(systemName: "stop.circle.fill")
                         .font(.system(size: 20))
-                        .foregroundStyle(Color.pastureError)
+                        .foregroundStyle(Color.pastureError(colorScheme))
                 }
                 .buttonStyle(.plain)
                 .help("Stop generating")
@@ -282,7 +335,7 @@ struct AskView: View {
                             .font(.system(size: 11))
                         Text("Ask")
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.pastureTextPrimaryLight)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
@@ -315,6 +368,14 @@ struct AskView: View {
 
     private func sendIfReady() {
         guard viewModel.canSend, !feedTargets.isEmpty else { return }
+        guard privacyNoticeAccepted else {
+            showPrivacyNotice = true
+            return
+        }
+        performSend()
+    }
+
+    private func performSend() {
         let context = fm.feedContext(files: feedTargets)
         viewModel.send(context: context, contextTokens: contextTokens)
     }
@@ -329,22 +390,11 @@ struct AskView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try viewModel.responseText.write(to: url, atomically: true, encoding: .utf8)
-            showSavedFeedback("Exported to \(url.lastPathComponent)")
+            feedService.showFeedback("Exported to \(url.lastPathComponent)")
         } catch {
-            showSavedFeedback("Export failed: \(error.localizedDescription)")
+            feedService.showFeedback("Export failed: \(error.localizedDescription)", isError: true)
         }
     }
-
-    private func showSavedFeedback(_ message: String) {
-        feedbackDismissTask?.cancel()
-        withAnimation { savedFeedback = message }
-        feedbackDismissTask = Task {
-            try? await Task.sleep(for: .seconds(PastureLayout.toastDismissDelay))
-            guard !Task.isCancelled else { return }
-            withAnimation { savedFeedback = nil }
-        }
-    }
-
 }
 
 private struct PulseModifier: ViewModifier {

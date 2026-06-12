@@ -24,7 +24,7 @@ struct FileRow: View {
             Spacer()
             Text(TokenEstimator.formatted(file.tokens))
                 .font(.pastureTokenCount)
-                .foregroundStyle(Color.pastureTokenBadge)
+                .foregroundStyle(Color.pastureTokenBadgeText(colorScheme))
                 .padding(.horizontal, PastureLayout.tokenBadgeHPadding)
                 .padding(.vertical, PastureLayout.tokenBadgeVPadding)
                 .background(

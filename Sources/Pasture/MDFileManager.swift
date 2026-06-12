@@ -7,24 +7,6 @@ private let pastureDirURL: URL = {
     return home.appendingPathComponent(".pasture")
 }()
 
-private let pastureDirectoryChangedNotification = Notification.Name("PastureDirectoryChanged")
-
-private func makeDirectoryWatchSource(fd: Int32) -> any DispatchSourceFileSystemObject {
-    let source = DispatchSource.makeFileSystemObjectSource(
-        fileDescriptor: fd,
-        eventMask: .write,
-        queue: .global(qos: .utility)
-    )
-    source.setEventHandler {
-        NotificationCenter.default.post(name: pastureDirectoryChangedNotification, object: nil)
-    }
-    source.setCancelHandler {
-        close(fd)
-    }
-    source.resume()
-    return source
-}
-
 extension MDFile {
     var collection: String? {
         collection(relativeTo: pastureDirURL)
@@ -33,28 +15,30 @@ extension MDFile {
 
 @MainActor
 final class MDFileManager: ObservableObject {
-    @Published var files: [MDFile] = []
+    /// Invariant: always sorted by modifiedDate descending (FileLibrary.load
+    /// returns it sorted; save() re-sorts after updating). SidebarView's date
+    /// mode relies on this and returns the array as-is.
+    @Published var files: [MDFile] = [] {
+        didSet { updateFilteredFiles() }
+    }
     @Published var collections: [String] = []
-    @Published var searchQuery: String = ""
+    @Published var searchQuery: String = "" {
+        didSet { if searchQuery != oldValue { updateFilteredFiles() } }
+    }
     @Published var lastError: String?
 
-    nonisolated(unsafe) private var directorySource: (any DispatchSourceFileSystemObject)?
-    nonisolated(unsafe) private var reloadWorkItem: DispatchWorkItem?
-    nonisolated(unsafe) private var subdirectorySources: [String: any DispatchSourceFileSystemObject] = [:]
-    nonisolated(unsafe) private var subdirectoryFDs: [String: Int32] = [:]
+    /// Cached search result — recomputed only when `files` or `searchQuery` change,
+    /// not on every SwiftUI body evaluation.
+    @Published private(set) var filteredFiles: [MDFile] = []
+
+    private let watcher = DirectoryWatcher()
+    private var loadTask: Task<Void, Never>?
 
     static let pastureDir: URL = pastureDirURL
 
-    var filteredFiles: [MDFile] {
-        guard !searchQuery.isEmpty else { return files }
-        let q = searchQuery
-        return files.filter {
-            $0.name.localizedCaseInsensitiveContains(q) ||
-            $0.content.localizedCaseInsensitiveContains(q)
-        }
+    private func updateFilteredFiles() {
+        filteredFiles = searchQuery.isEmpty ? files : files.filter { $0.matches(query: searchQuery) }
     }
-
-    nonisolated(unsafe) private var reloadObserver: (any NSObjectProtocol)?
 
     // MARK: — Helpers
 
@@ -67,19 +51,12 @@ final class MDFileManager: ObservableObject {
         let collectionDir = Self.pastureDir.appendingPathComponent(collection)
         guard Self.isInsidePasture(collectionDir) else { return nil }
         try? FileManager.default.createDirectory(at: collectionDir, withIntermediateDirectories: true)
-        return collectionDir
-    }
-
-    static func deduplicatedURL(baseName: String, ext: String, in directory: URL) -> URL {
-        let filename = ext.isEmpty ? baseName : "\(baseName).\(ext)"
-        var url = directory.appendingPathComponent(filename)
-        var counter = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            let numbered = ext.isEmpty ? "\(baseName)-\(counter)" : "\(baseName)-\(counter).\(ext)"
-            url = directory.appendingPathComponent(numbered)
-            counter += 1
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: collectionDir.path, isDirectory: &isDir), isDir.boolValue else {
+            lastError = "Cannot create collection directory '\(collection)'"
+            return nil
         }
-        return url
+        return collectionDir
     }
 
     private func refreshCollections(from subdirs: [URL]) {
@@ -89,7 +66,7 @@ final class MDFileManager: ObservableObject {
     }
 
     private func refreshCollections() {
-        refreshCollections(from: Self.realSubdirectories(in: Self.pastureDir))
+        refreshCollections(from: FileLibrary.realSubdirectories(in: Self.pastureDir))
     }
 
     // MARK: — Lifecycle
@@ -103,121 +80,32 @@ final class MDFileManager: ObservableObject {
         if !fm.fileExists(atPath: Self.pastureDir.path) {
             try? fm.createDirectory(at: Self.pastureDir, withIntermediateDirectories: true)
         }
-        reloadObserver = NotificationCenter.default.addObserver(
-            forName: pastureDirectoryChangedNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.debouncedReload()
-            }
+        watcher.onChange = { [weak self] in
+            self?.loadFiles()
         }
+        watcher.watchRoot(Self.pastureDir)
         loadFiles()
-        startWatching()
-    }
-
-    deinit {
-        reloadWorkItem?.cancel()
-        directorySource?.cancel()
-        for source in subdirectorySources.values {
-            source.cancel()
-        }
-        if let obs = reloadObserver {
-            NotificationCenter.default.removeObserver(obs)
-        }
-    }
-
-    // MARK: — File watching
-
-    private func startWatching() {
-        guard directorySource == nil else { return }
-        let fd = open(Self.pastureDir.path, O_EVTONLY)
-        guard fd >= 0 else { return }
-        directorySource = makeDirectoryWatchSource(fd: fd)
-        updateSubdirectoryWatchers()
-    }
-
-    func stopWatching() {
-        reloadWorkItem?.cancel()
-        reloadWorkItem = nil
-        directorySource?.cancel()
-        directorySource = nil
-        for source in subdirectorySources.values {
-            source.cancel()
-        }
-        subdirectorySources.removeAll()
-        subdirectoryFDs.removeAll()
-    }
-
-    private func updateSubdirectoryWatchers() {
-        let currentCollections = Set(collections)
-        let watchedCollections = Set(subdirectorySources.keys)
-
-        for name in watchedCollections.subtracting(currentCollections) {
-            subdirectorySources[name]?.cancel()
-            subdirectorySources.removeValue(forKey: name)
-            subdirectoryFDs.removeValue(forKey: name)
-        }
-
-        for name in currentCollections.subtracting(watchedCollections) {
-            let subdirURL = Self.pastureDir.appendingPathComponent(name)
-            let fd = open(subdirURL.path, O_EVTONLY)
-            guard fd >= 0 else { continue }
-            subdirectoryFDs[name] = fd
-            subdirectorySources[name] = makeDirectoryWatchSource(fd: fd)
-        }
-    }
-
-    private func debouncedReload() {
-        reloadWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.loadFiles()
-            }
-        }
-        reloadWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
     }
 
     // MARK: — CRUD
 
-    private static func mdFiles(in directory: URL) -> [MDFile] {
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isSymbolicLinkKey, .isDirectoryKey],
-            options: .skipsHiddenFiles
-        ) else { return [] }
-        return urls
-            .filter { url in
-                guard url.pathExtension.lowercased() == "md" else { return false }
-                let rv = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
-                return rv?.isSymbolicLink != true
-            }
-            .map { MDFile(url: $0) }
-    }
-
-    private static func realSubdirectories(in directory: URL) -> [URL] {
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: .skipsHiddenFiles
-        ) else { return [] }
-        return urls.filter { url in
-            let rv = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            return rv?.isDirectory == true && rv?.isSymbolicLink != true
-        }
-    }
-
+    /// Reloads the library asynchronously: disk I/O runs off the main actor
+    /// (`FileLibrary.load` is nonisolated), results are applied back on it.
+    /// A new call cancels any in-flight reload.
     func loadFiles() {
-        let pastureDir = Self.pastureDir
-        let subdirs = Self.realSubdirectories(in: pastureDir)
-        var allMDFiles = Self.mdFiles(in: pastureDir)
-        for subdir in subdirs {
-            allMDFiles.append(contentsOf: Self.mdFiles(in: subdir))
+        loadTask?.cancel()
+        let dir = Self.pastureDir
+        loadTask = Task { [weak self] in
+            let result = await FileLibrary.load(at: dir)
+            guard !Task.isCancelled else { return }
+            self?.apply(result)
         }
-        files = allMDFiles.sorted { $0.modifiedDate > $1.modifiedDate }
-        refreshCollections(from: subdirs)
-        updateSubdirectoryWatchers()
+    }
+
+    private func apply(_ result: FileLibrary.LoadResult) {
+        files = result.files
+        refreshCollections(from: result.subdirectories)
+        watcher.updateSubdirectories(names: collections, under: Self.pastureDir)
     }
 
     func save(file: MDFile) {
@@ -252,7 +140,7 @@ final class MDFileManager: ObservableObject {
         }
 
         let baseName = cleanName.hasSuffix(".md") ? String(cleanName.dropLast(3)) : cleanName
-        let finalURL = Self.deduplicatedURL(baseName: baseName, ext: "md", in: targetDir)
+        let finalURL = FileLibrary.deduplicatedURL(baseName: baseName, ext: "md", in: targetDir)
         guard Self.isInsidePasture(finalURL) else {
             lastError = "Invalid file path"
             return nil
@@ -265,6 +153,36 @@ final class MDFileManager: ObservableObject {
             return newFile
         } catch {
             lastError = "Failed to create \(cleanName): \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// Renames a file in place (same collection). Returns the renamed file, or
+    /// the original when the name is unchanged; `nil` on failure.
+    @discardableResult
+    func rename(file: MDFile, to newName: String) -> MDFile? {
+        guard Self.isInsidePasture(file.url) else { return nil }
+        let clean = FilenameSanitizer.sanitize(newName)
+        guard !clean.isEmpty else {
+            lastError = "Invalid file name"
+            return nil
+        }
+        let baseName = clean.hasSuffix(".md") ? String(clean.dropLast(3)) : clean
+        guard baseName != file.name else { return file }
+
+        let directory = file.url.deletingLastPathComponent()
+        let destURL = FileLibrary.deduplicatedURL(baseName: baseName, ext: "md", in: directory)
+        guard Self.isInsidePasture(destURL) else { return nil }
+
+        do {
+            try FileManager.default.moveItem(at: file.url, to: destURL)
+            let renamed = MDFile(url: destURL)
+            if let idx = files.firstIndex(of: file) {
+                files[idx] = renamed
+            }
+            return renamed
+        } catch {
+            lastError = "Failed to rename \(file.name): \(error.localizedDescription)"
             return nil
         }
     }
@@ -296,7 +214,7 @@ final class MDFileManager: ObservableObject {
         do {
             try fm.createDirectory(at: collectionURL, withIntermediateDirectories: false)
             refreshCollections()
-            updateSubdirectoryWatchers()
+            watcher.updateSubdirectories(names: collections, under: Self.pastureDir)
             return true
         } catch {
             return false
@@ -320,14 +238,40 @@ final class MDFileManager: ObservableObject {
         }
     }
 
+    /// Renames a collection directory. The full library reloads afterwards
+    /// because every contained file's URL changes.
+    @discardableResult
+    func renameCollection(_ name: String, to newName: String) -> Bool {
+        let clean = FilenameSanitizer.sanitize(newName)
+        guard !clean.isEmpty, clean != name else { return false }
+
+        let sourceURL = Self.pastureDir.appendingPathComponent(name)
+        let destURL = Self.pastureDir.appendingPathComponent(clean)
+        guard Self.isInsidePasture(sourceURL), Self.isInsidePasture(destURL) else { return false }
+        guard !FileManager.default.fileExists(atPath: destURL.path) else {
+            lastError = "A collection named '\(clean)' already exists"
+            return false
+        }
+
+        do {
+            try FileManager.default.moveItem(at: sourceURL, to: destURL)
+            loadFiles()
+            return true
+        } catch {
+            lastError = "Failed to rename collection '\(name)': \(error.localizedDescription)"
+            return false
+        }
+    }
+
     func deleteCollection(_ name: String) {
         let collectionURL = Self.pastureDir.appendingPathComponent(name)
         guard Self.isInsidePasture(collectionURL) else { return }
 
-        let fm = FileManager.default
-        let contents: [String]
+        let contents: [URL]
         do {
-            contents = try fm.contentsOfDirectory(atPath: collectionURL.path)
+            // visibleContents skips hidden files: a .DS_Store must not block
+            // deleting a visually empty collection
+            contents = try FileLibrary.visibleContents(of: collectionURL)
         } catch {
             lastError = "Cannot read collection '\(name)': \(error.localizedDescription)"
             return
@@ -338,9 +282,9 @@ final class MDFileManager: ObservableObject {
         }
 
         do {
-            try fm.removeItem(at: collectionURL)
+            try FileManager.default.removeItem(at: collectionURL)
             refreshCollections()
-            updateSubdirectoryWatchers()
+            watcher.updateSubdirectories(names: collections, under: Self.pastureDir)
         } catch {
             lastError = "Failed to delete collection '\(name)': \(error.localizedDescription)"
         }

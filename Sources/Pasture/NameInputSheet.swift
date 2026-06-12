@@ -5,8 +5,16 @@ struct NameInputSheet: View {
     let actionLabel: String
     let onConfirm: (String) -> Void
 
-    @State private var fileName = ""
+    @State private var fileName: String
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var nameFieldFocused: Bool
+
+    init(title: String, actionLabel: String, initialName: String = "", onConfirm: @escaping (String) -> Void) {
+        self.title = title
+        self.actionLabel = actionLabel
+        self.onConfirm = onConfirm
+        _fileName = State(initialValue: initialName)
+    }
 
     var body: some View {
         VStack(spacing: PastureLayout.sheetSpacing) {
@@ -15,6 +23,7 @@ struct NameInputSheet: View {
             TextField("File name", text: $fileName)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 300)
+                .focused($nameFieldFocused)
                 .onSubmit { submit() }
             HStack(spacing: PastureLayout.sheetButtonSpacing) {
                 Button("Cancel") { dismiss() }
@@ -26,6 +35,7 @@ struct NameInputSheet: View {
         }
         .padding(PastureLayout.sheetPadding)
         .frame(minWidth: PastureLayout.sheetMinWidth)
+        .onAppear { nameFieldFocused = true }
     }
 
     private func submit() {

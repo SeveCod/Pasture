@@ -11,6 +11,9 @@ struct SidebarView: View {
     @Binding var filePendingDeletion: MDFile?
     @Binding var showDeleteConfirmation: Bool
     var onDrop: ([NSItemProvider]) -> Bool
+    @State private var collectionPendingDeletion: String?
+    @State private var filePendingRename: MDFile?
+    @State private var collectionPendingRename: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +24,41 @@ struct SidebarView: View {
             selectionSummary
         }
         .background(Color.pastureSidebar(colorScheme))
+        .alert("Delete collection?",
+               isPresented: Binding(
+                   get: { collectionPendingDeletion != nil },
+                   set: { if !$0 { collectionPendingDeletion = nil } }
+               ),
+               presenting: collectionPendingDeletion) { name in
+            Button("Delete", role: .destructive) { fm.deleteCollection(name) }
+            Button("Cancel", role: .cancel) { collectionPendingDeletion = nil }
+        } message: { name in
+            Text("The empty collection '\(name)' will be deleted.")
+        }
+        .sheet(item: $filePendingRename) { file in
+            NameInputSheet(title: "Rename '\(file.name)'", actionLabel: "Rename", initialName: file.name) { newName in
+                renameFile(file, to: newName)
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { collectionPendingRename != nil },
+            set: { if !$0 { collectionPendingRename = nil } }
+        )) {
+            if let name = collectionPendingRename {
+                NameInputSheet(title: "Rename collection '\(name)'", actionLabel: "Rename", initialName: name) { newName in
+                    fm.renameCollection(name, to: newName)
+                }
+            }
+        }
+    }
+
+    private func renameFile(_ file: MDFile, to newName: String) {
+        guard let renamed = fm.rename(file: file, to: newName) else { return }
+        if activeFile == file { activeFile = renamed }
+        if selectedFiles.contains(file) {
+            selectedFiles.remove(file)
+            selectedFiles.insert(renamed)
+        }
     }
 
     // MARK: — Search
@@ -78,7 +116,8 @@ struct SidebarView: View {
         let base = fm.filteredFiles
         switch sortOrder {
         case .date:
-            return base.sorted { $0.modifiedDate > $1.modifiedDate }
+            // fm.files is already kept sorted by date descending (loadFiles/save)
+            return base
         case .name:
             return base.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
@@ -149,6 +188,12 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func fileContextMenu(for file: MDFile) -> some View {
+        Button {
+            filePendingRename = file
+        } label: {
+            Label("Rename\u{2026}", systemImage: "pencil")
+        }
+
         Menu("Move to...") {
             if file.collection != nil {
                 Button("Uncategorized") {
@@ -174,9 +219,15 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func collectionHeaderContextMenu(collectionName: String, isEmpty: Bool) -> some View {
+        Button {
+            collectionPendingRename = collectionName
+        } label: {
+            Label("Rename Collection\u{2026}", systemImage: "pencil")
+        }
+
         if isEmpty {
             Button(role: .destructive) {
-                fm.deleteCollection(collectionName)
+                collectionPendingDeletion = collectionName
             } label: {
                 Label("Delete Collection", systemImage: "trash")
             }
@@ -207,7 +258,7 @@ struct SidebarView: View {
                 Text("~\(TokenEstimator.formatted(totalTokens)) tokens")
                     .font(.pastureSummary)
             }
-            .foregroundStyle(Color.pastureTokenBadge)
+            .foregroundStyle(Color.pastureTokenBadgeText(colorScheme))
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Approximately \(TokenEstimator.formatted(totalTokens)) tokens")
         }

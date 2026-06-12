@@ -97,7 +97,7 @@ private struct ExportSettingsTab: View {
 
             if !dest.wrappedValue.path.isEmpty && !dest.wrappedValue.isWritable {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color.pastureError)
+                    .foregroundStyle(Color.pastureError(colorScheme))
                     .help("Directory not writable")
                     .accessibilityLabel("Warning: Directory not writable")
             }
@@ -107,7 +107,7 @@ private struct ExportSettingsTab: View {
 
             Button(role: .destructive) { remove(dest.wrappedValue) } label: {
                 Image(systemName: "trash")
-                    .foregroundStyle(Color.pastureError)
+                    .foregroundStyle(Color.pastureError(colorScheme))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Delete destination")
@@ -271,7 +271,7 @@ private struct AISettingsTab: View {
                 if let result = testResult {
                     Text(result)
                         .font(.caption)
-                        .foregroundStyle(result.hasPrefix("\u{2714}") ? Color.pastureSuccess : Color.pastureError)
+                        .foregroundStyle(result.hasPrefix("\u{2714}") ? Color.pastureSuccess : Color.pastureError(colorScheme))
                 }
             }
         }
@@ -284,7 +284,8 @@ private struct AISettingsTab: View {
         testResult = nil
 
         let model = AIModel.model(byID: selectedModelID) ?? AIModel.defaultModels[0]
-        let client = AIClient()
+        // Shared client: the connection test exercises the same session config as real asks
+        let client = AIClient.shared
 
         Task {
             var gotResponse = false
