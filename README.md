@@ -224,3 +224,7 @@ No CoreData, no SwiftData, no external dependencies.
 **Current version: 1.5.0** (2026-06-12)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history of changes.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
