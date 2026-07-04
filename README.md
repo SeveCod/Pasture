@@ -222,7 +222,7 @@ No CoreData, no SwiftData, no external dependencies.
 
 ## Release
 
-**Current version: 1.5.0** (2026-06-12)
+**Current version: 1.5.1** (2026-07-04)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history of changes.
 

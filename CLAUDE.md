@@ -205,4 +205,4 @@ Ten files under `Sources/PastureKit/MCP/`. All logic is pure Swift, `Sendable`, 
 
 ## Bundle ID & versioning
 
-Bundle ID: `com.sevecod.pasture`. Current version: **1.5.0**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).
+Bundle ID: `com.sevecod.pasture`. Current version: **1.5.1**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).
