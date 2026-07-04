@@ -9,3 +9,5 @@ DerivedData/
 *~
 dist/
 .claude/
+sonar-project.properties
+.scannerwork/

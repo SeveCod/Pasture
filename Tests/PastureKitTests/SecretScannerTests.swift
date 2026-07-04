@@ -50,6 +50,29 @@ struct SecretScannerTests {
         #expect(result.kinds.contains(.openAIKey))
     }
 
+    @Test("Detects modern OpenAI project key (sk-proj-)")
+    func detectsOpenAIProject() {
+        // Formato por defecto de OpenAI desde 2024. El '-' tras 'proj' rompe el
+        // patrón genérico sk-[A-Za-z0-9]{20,}, por eso necesita patrón propio.
+        let secret = "sk-proj-" + "abcDEF123-ghiJKL456_mnoPQR789stuVWX0"
+        let result = SecretScanner.scan(fileName: "openai.md", content: "OPENAI_API_KEY=\(secret)")
+        #expect(result.kinds.contains(.openAIKey))
+    }
+
+    @Test("Detects GitHub fine-grained token (github_pat_)")
+    func detectsGitHubFineGrained() {
+        // Formato recomendado por GitHub desde 2023. El patrón clásico gh[opus]_ no lo cubre.
+        let secret = "github_pat_" + "11ABCDE0123456789_abcdefghijklmnopqrstuvwxyz0123456789"
+        let result = SecretScanner.scan(fileName: "ci.md", content: "token: \(secret)")
+        #expect(result.kinds.contains(.githubToken))
+    }
+
+    @Test("Detects AWS temporary/STS access key (ASIA...)")
+    func detectsAWSTemporary() {
+        let result = SecretScanner.scan(fileName: "aws.md", content: "AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE")
+        #expect(result.kinds.contains(.awsAccessKey))
+    }
+
     @Test("Detects Slack token (xox)")
     func detectsSlack() {
         // Fixture construido por concatenación para no disparar el push
@@ -174,8 +197,10 @@ struct SecretScannerTests {
         let skBait = "sk-" + String(repeating: "a", count: 300_000)
         let big = dashes + "\n" + pemBait + "\n" + skBait
         let result = SecretScanner.scan(fileName: "huge.md", content: big)
-        // No asertamos contenido concreto: el objetivo es que TERMINE.
-        _ = result.isEmpty
+        // El objetivo es que TERMINE (lo garantiza .timeLimit). Además verificamos
+        // que el escaneo corrió realmente sobre el input grande: skBait es un sk-
+        // válido dentro del cap de 2 MB, así que debe detectarse como openAIKey.
+        #expect(result.kinds.contains(.openAIKey))
     }
 
     @Test("Very large clean input completes quickly (SEC-3)", .timeLimit(.minutes(1)))
@@ -194,7 +219,16 @@ struct SecretScannerTests {
         let padding = String(repeating: "x", count: SecretScanner.maxScanBytes + 1000)
         let content = padding + "\nghp_0123456789abcdefghijklmnopqrstuvwx"
         let result = SecretScanner.scan(fileName: "capped.md", content: content)
-        // No se exige detección más allá del cap; se exige que termine y no falle.
-        _ = result.isEmpty
+        // El token ghp_ está más allá del cap de escaneo, así que NO debe detectarse:
+        // el cap trunca el contenido antes de llegar a él.
+        #expect(result.isEmpty)
+    }
+
+    @Test("Pattern catalog compiles without crashing")
+    func patternCatalogCompiles() {
+        // Fuerza la inicialización perezosa del catálogo (try! en compile()).
+        // Un patrón malformado en el futuro reventaría aquí, en CI, no en producción.
+        let result = SecretScanner.scan(fileName: "x.md", content: "plain text without secrets")
+        #expect(result.isEmpty)
     }
 }

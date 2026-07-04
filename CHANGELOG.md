@@ -5,6 +5,34 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **MIT LICENSE** file at the repository root, referenced from the README.
+- **`docs/adr/`**: canonical Architecture Decision Record registry. Resolves a numbering collision where the v1.4 and v1.5 features had reused the same `ADR-00X` numbers for different decisions; the two series are now namespaced `ADR-QW-00X` (quick wins) and `ADR-MCP-00X` (MCP server).
+
+### Changed
+
+- `KeychainStore.delete` now returns a `@discardableResult Bool` (true if the key was removed or was already absent, false on a real Keychain failure).
+- Test count: 491 → 501.
+
+### Fixed
+
+- **Export toolbar button bypassed pre-feed guards**: the "Export" button wrote feed context to disk without running the secret scan or substituting template variables — the only output path in the app that skipped both. It now routes through `FeedService` like every other feed (audit finding 2.1).
+- **`TemplateEngine` leaked control syntax past the nesting cap**: templates deeper than `maxNestingDepth` (16) emitted orphan `{{/if}}` tokens into the output, even when the condition was false. The parser now flattens the over-deep block into balanced literal text (audit finding 2.5).
+- **`TemplateEngine` variable kind depended on order**: a variable used as both `{{X}}` and `{{#each X}}` took its `.scalar`/`.list` kind from whichever appeared first. It is now `.list` if used in any `#each`, regardless of order.
+- **`MCPLineReader` emitted a phantom empty line**: recovering from an oversized line when the recovery `\n` arrived in the same chunk as following data produced a spurious empty line the client never sent.
+- **AIClient streamed responses ending without a terminator** (`message_stop` / `[DONE]`) were presented as complete; they now surface a `networkError` so a truncated response is not shown as finished.
+
+### Security
+
+- **`SecretScanner`** now detects modern token formats: OpenAI project keys (`sk-proj-`), GitHub fine-grained tokens (`github_pat_`), and AWS STS temporary keys (`ASIA…`).
+- **`TemplateEngine`** gains a global output budget (`maxOutputCharacters`), bounding total render size against multiplicative amplification from nested `#each` blocks (per-level caps alone are multiplicative).
+- **MCP `read_file` / `feed_context`** check a file's on-disk size before reading it, so a huge vault file is rejected without being materialized in RAM (audit finding 2.4, hardens SEC-M5).
+- **AIClient** cancels the underlying `URLSessionDataTask` when a stream is stopped, closing the HTTP connection instead of leaving it (and its token billing) running until timeout.
+- **`MDFileManager.setup`** now surfaces a failure to create `~/.pasture/` via `lastError` instead of failing silently into an empty-looking app.
+
 ## [1.5.0] - 2026-06-12
 
 ### Added
@@ -17,7 +45,7 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - SPM package gains a fourth target: `pasture-mcp` (executable). The MCP protocol layer (`MCPDispatcher`, `MCPTools`, `MCPMessage`, `MCPPathResolver`, `MCPLimits`, `MCPLineReader`, `MCPServerConfig`, `MCPConfigGenerator`, `MCPVaultStats`, `MCPProtocol`) lives in PastureKit for testability; the executable is a thin `main.swift` that wires transport only.
-- Test count: 420 → 491 (71 new MCP tests in 7 suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`).
+- Test count: 420 → 491 (71 new MCP tests in 7 suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`). _(Corrected from an earlier "486" figure that predated the final MCPLineReader regression tests.)_
 - `DesignTokens`: added `pastureSuccess(_:)` color token (used in Settings → AI key-saved indicator and Settings → MCP scan result).
 
 ### Security
@@ -26,7 +54,7 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 - MCP input lines are capped at 10 MB by `MCPLineReader` before reaching the JSON decoder; lines over the cap are discarded and logged to stderr without touching the connection (SEC-M3).
 - MCP search caps query length at 1,000 characters and results at 100 files; an empty query returns an explicit empty message rather than dumping the vault (SEC-M4).
 - MCP responses are capped at 25 MB; content above the cap returns `isError: true` without serializing the payload (SEC-M5).
-- The MCP server is strictly read-only — no tool modifies the filesystem (SEC-M6).
+- The MCP server is strictly read-only — no tool modifies the filesystem (SEC-M11). (SEC-M6 is the separate invariant that context assembly goes exclusively through `ContextBuilder`.)
 - `pasture-mcp` writes only framed JSON-RPC to stdout; all diagnostic output goes to stderr. No `print()` path to stdout exists in the MCP code path (SEC-M7).
 - MCP secret warnings report family and file name only, never the matched value; file content is delivered unchanged — the warning is informational, not a gate (SEC-M8).
 - The MCP Settings tab scans the vault for secrets before showing registration snippets, so users can make an informed consent decision (SEC-M9).

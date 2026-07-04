@@ -66,6 +66,11 @@ public actor AIClient {
         }
 
         let session = self.session
+        // Sostiene el URLSessionDataTask subyacente para poder cancelarlo desde
+        // onTermination (que corre en otro contexto). Cancelar sólo el Task de Swift
+        // no garantiza cerrar la conexión HTTP: sin esto, tras pulsar "Stop" la
+        // petición podría seguir viva —y facturando tokens— hasta el timeout (2.2).
+        let httpTaskBox = HTTPTaskBox()
         return AsyncThrowingStream { continuation in
             let task = Task {
                 var lastError: AIClientError?
@@ -86,6 +91,7 @@ public actor AIClient {
 
                     do {
                         let (bytes, response) = try await session.bytes(for: request)
+                        httpTaskBox.task = bytes.task
 
                         guard let http = response as? HTTPURLResponse else {
                             continuation.finish(throwing: AIClientError.invalidResponse)
@@ -103,19 +109,32 @@ public actor AIClient {
                         }
 
                         var buffer = SSELineBuffer()
+                        var sawStreamEnd = false
+                        var cancelled = false
                         for try await line in bytes.lines {
-                            guard !Task.isCancelled else { break }
+                            if Task.isCancelled { cancelled = true; break }
 
                             if let event = SSEParser.parse(line: line, buffer: &buffer) {
                                 if let text = Self.extractDelta(from: event, provider: model.provider) {
                                     continuation.yield(text)
                                 }
                                 if Self.isStreamEnd(event: event, provider: model.provider) {
+                                    sawStreamEnd = true
                                     break
                                 }
                             }
                         }
-                        continuation.finish()
+                        if cancelled {
+                            continuation.finish()
+                        } else if sawStreamEnd {
+                            continuation.finish()
+                        } else {
+                            // El stream terminó sin el evento de fin (message_stop / [DONE]):
+                            // el servidor cerró antes de tiempo y la respuesta puede estar
+                            // truncada. No la presentamos como completa (2.3).
+                            continuation.finish(throwing: AIClientError.networkError(
+                                underlying: "response stream ended before completion"))
+                        }
                         return
                     } catch is CancellationError {
                         continuation.finish()
@@ -135,7 +154,10 @@ public actor AIClient {
                 continuation.finish(throwing: lastError ?? AIClientError.serverError(statusCode: 0, message: "Retries exhausted"))
             }
 
-            continuation.onTermination = { _ in task.cancel() }
+            continuation.onTermination = { _ in
+                task.cancel()
+                httpTaskBox.task?.cancel()   // cierra la conexión HTTP subyacente (2.2)
+            }
         }
     }
 
@@ -260,5 +282,16 @@ public actor AIClient {
         } catch { /* best-effort: use whatever body was read so far */ }
         let retryAfter = response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
         return Self.mapStatusCode(statusCode, body: body, retryAfter: retryAfter)
+    }
+}
+
+/// Contenedor thread-safe para el `URLSessionDataTask` en vuelo. Se escribe desde el
+/// `Task` de streaming y se lee desde `onTermination` (otro contexto), de ahí el cerrojo.
+private final class HTTPTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: URLSessionDataTask?
+    var task: URLSessionDataTask? {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); storage = newValue; lock.unlock() }
     }
 }

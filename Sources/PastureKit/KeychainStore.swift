@@ -30,6 +30,11 @@ public enum KeychainStore {
         }
     }
 
+    /// Devuelve el valor almacenado, o `nil` si no existe **o** si el llavero no es
+    /// accesible (dispositivo bloqueado, acceso denegado). Colapsar ambos casos a `nil`
+    /// es una decisión deliberada: para una app de escritorio personal, un llavero
+    /// inaccesible se presenta como "sin clave configurada", un estado recuperable
+    /// (el usuario vuelve a introducirla) en lugar de un error propagado.
     public static func load(key: String, service: String = "com.sevecod.pasture") -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -47,13 +52,18 @@ public enum KeychainStore {
         return string
     }
 
-    public static func delete(key: String, service: String = "com.sevecod.pasture") {
+    /// Borra la entrada. Devuelve `true` si se borró o si no existía (ambos son el
+    /// estado deseado: "ya no está"); `false` sólo ante un fallo real del llavero, para
+    /// que el llamante pueda detectarlo en vez de creer que borró cuando no fue así.
+    @discardableResult
+    public static func delete(key: String, service: String = "com.sevecod.pasture") -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key
         ]
-        SecItemDelete(query as CFDictionary)
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 
     public enum KeychainError: Error, LocalizedError, Sendable {

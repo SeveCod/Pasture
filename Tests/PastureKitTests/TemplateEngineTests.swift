@@ -302,6 +302,43 @@ struct TemplateEngineTests {
         #expect(result.contains("deep"))
     }
 
+    @Test("Nesting profundo con condicion falsa no fuga sintaxis de control")
+    func deepNestingFalseConditionNoLeak() {
+        // Regresion (auditoria 2.5): al superar maxNestingDepth el parser fugaba
+        // `{{/if}}` huerfanos al nivel padre, que aparecian en la salida incluso con
+        // la condicion a false. Con la variable vacia, la salida debe ser vacia.
+        var template = ""
+        for _ in 0..<20 { template += "{{#if X}}" }
+        template += "deep"
+        for _ in 0..<20 { template += "{{/if}}" }
+        let v = TemplateVariable(name: "X")  // value vacio => condicion false
+        let result = TemplateEngine.render(template, with: [v])
+        #expect(result.isEmpty)
+        #expect(!result.contains("{{/if}}"))
+        #expect(!result.contains("{{#if"))
+    }
+
+    @Test("Presupuesto global de salida acota #each anidados (M-2)")
+    func globalOutputBudgetCapsNestedEach() {
+        // Dos #each anidados sobre listas grandes: sin tope global el coste es
+        // multiplicativo. El presupuesto global debe acotar el tamano de salida.
+        var outer = TemplateVariable(name: "A", kind: .list)
+        outer.value = (0..<1000).map(String.init).joined(separator: ",")
+        var inner = TemplateVariable(name: "B", kind: .list)
+        inner.value = (0..<1000).map(String.init).joined(separator: ",")
+        let result = TemplateEngine.render("{{#each A}}{{#each B}}xxxxxxxxxx{{/each}}{{/each}}", with: [outer, inner])
+        #expect(result.count <= TemplateEngine.maxOutputCharacters)
+    }
+
+    @Test("Variable usada como #each y escalar se clasifica como list (independiente del orden)")
+    func variableKindPrefersListRegardlessOfOrder() {
+        // El uso escalar aparece ANTES que el #each; aun asi debe ganar .list.
+        let vars = TemplateEngine.extractVariables(from: "{{TAGS}} luego {{#each TAGS}}{{.}}{{/each}}")
+        #expect(vars.count == 1)
+        #expect(vars[0].name == "TAGS")
+        #expect(vars[0].kind == .list)
+    }
+
     @Test("#each respeta limite de iteraciones")
     func eachIterationLimit() {
         var v = TemplateVariable(name: "BIG", kind: .list)

@@ -3,9 +3,9 @@ import Foundation
 /// Familia de secreto detectada. Driver del texto que ve el usuario en el aviso.
 public enum SecretKind: String, Sendable, CaseIterable, Hashable {
     case anthropicKey   // sk-ant-...
-    case openAIKey      // sk-... (genérico, excluyendo sk-ant)
-    case githubToken    // ghp_ / gho_ / ghu_ / ghs_
-    case awsAccessKey   // AKIA[0-9A-Z]{16}
+    case openAIKey      // sk-... / sk-proj-... (genérico, excluyendo sk-ant)
+    case githubToken    // ghp_ / gho_ / ghu_ / ghs_ / github_pat_ (fine-grained)
+    case awsAccessKey   // AKIA / ASIA (STS temporal) [0-9A-Z]{16}
     case pemPrivateKey  // -----BEGIN ... PRIVATE KEY-----
     case slackToken     // xox[baprs]-...
 
@@ -124,16 +124,23 @@ public enum SecretScanner {
         return [
             // Anthropic: literal sk-ant- + cuerpo alfanumérico/guiones. ANTES que openAI.
             Pattern(kind: .anthropicKey, regex: compile("sk-ant-[A-Za-z0-9_-]{20,}")),
-            // GitHub: la clase [opus] hace coincidir la 3ª letra del prefijo, es
-            // decir, cubre ghp_ (personal), gho_ (oauth), ghu_ (user-to-server) y
+            // GitHub clásico: la clase [opus] hace coincidir la 3ª letra del prefijo,
+            // cubriendo ghp_ (personal), gho_ (oauth), ghu_ (user-to-server) y
             // ghs_ (server-to-server) en un solo patrón. + >=20 alfanuméricos.
             Pattern(kind: .githubToken, regex: compile("gh[opus]_[A-Za-z0-9]{20,}")),
-            // AWS access key: AKIA + 16 mayúsculas/dígitos, con límite de palabra.
-            Pattern(kind: .awsAccessKey, regex: compile("\\bAKIA[0-9A-Z]{16}\\b")),
+            // GitHub fine-grained (recomendado desde 2023): github_pat_ + cuerpo con
+            // alfanuméricos y guiones bajos. El patrón clásico gh[opus]_ no lo cubre.
+            Pattern(kind: .githubToken, regex: compile("github_pat_[A-Za-z0-9_]{20,}")),
+            // AWS access key: AKIA (largo plazo) o ASIA (STS temporal) + 16
+            // mayúsculas/dígitos, con límite de palabra.
+            Pattern(kind: .awsAccessKey, regex: compile("\\bA[SK]IA[0-9A-Z]{16}\\b")),
             // Slack: xox[baprs]- + cuerpo.
             Pattern(kind: .slackToken, regex: compile("xox[baprs]-[A-Za-z0-9-]{10,}")),
             // PEM: basta la cabecera BEGIN ... PRIVATE KEY-----.
             Pattern(kind: .pemPrivateKey, regex: compile("-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
+            // OpenAI project (por defecto desde 2024): sk-proj- + cuerpo con guiones
+            // y guiones bajos. El genérico sk- no lo cubre (el '-' tras 'proj' lo corta).
+            Pattern(kind: .openAIKey, regex: compile("sk-proj-[A-Za-z0-9_-]{20,}")),
             // OpenAI genérico: sk- + >=20 alfanuméricos. Negar el prefijo sk-ant- por orden
             // (se filtra abajo: un match openAI cuyo texto empieza por "sk-ant-" se descarta).
             Pattern(kind: .openAIKey, regex: compile("sk-[A-Za-z0-9]{20,}")),

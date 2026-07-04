@@ -47,6 +47,15 @@ struct KeychainStoreTests {
         KeychainStore.delete(key: "never_existed", service: service)
     }
 
+    @Test("Delete returns true whether the key existed or not")
+    func deleteReturnsSuccess() throws {
+        let service = testService()
+        try KeychainStore.save(key: "del_ret", value: "v", service: service)
+        #expect(KeychainStore.delete(key: "del_ret", service: service) == true)
+        // Borrar de nuevo (ya no existe) también es "éxito": el estado deseado es "no está".
+        #expect(KeychainStore.delete(key: "del_ret", service: service) == true)
+    }
+
     @Test("Empty string saves and loads correctly")
     func emptyString() throws {
         let service = testService()

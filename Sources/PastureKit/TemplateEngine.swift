@@ -53,14 +53,23 @@ enum TemplateToken: Equatable {
 public enum TemplateEngine {
     public static let maxNestingDepth = 16
     public static let maxIterations = 1_000
+    /// Presupuesto global de caracteres de salida (SEC/M-2). Los caps de anidamiento
+    /// e iteración son POR NIVEL y por tanto multiplicativos; este tope global acota
+    /// el tamaño total del render y aborta bloques `#each` anidados que exploten.
+    public static let maxOutputCharacters = 5_000_000
 
     // MARK: — Public API
 
     public static func extractVariables(from text: String) -> [TemplateVariable] {
         let nodes = parse(text)
+        // Política de `kind` independiente del orden de aparición: un nombre usado en
+        // CUALQUIER `#each` es `.list`, aunque también aparezca antes como escalar
+        // (`{{X}}`/`#if`). Antes ganaba la primera aparición y `TemplateSheet` podía
+        // mostrar un campo escalar para algo usado como lista separada por comas.
+        let listNames = eachVariableNames(in: nodes)
         var seen = Set<String>()
         var vars: [TemplateVariable] = []
-        collectVariables(from: nodes, seen: &seen, vars: &vars)
+        collectVariables(from: nodes, listNames: listNames, seen: &seen, vars: &vars)
         return vars
     }
 
@@ -72,8 +81,9 @@ public enum TemplateEngine {
     public static func render(nodes: [TemplateNode], with variables: [TemplateVariable]) -> String {
         let lookup = Dictionary(variables.map { ($0.name, $0.value) }, uniquingKeysWith: { a, _ in a })
         var output = ""
+        var budget = maxOutputCharacters
         for node in nodes {
-            renderNode(node, lookup: lookup, currentItem: nil, currentIndex: nil, into: &output, depth: 0)
+            renderNode(node, lookup: lookup, currentItem: nil, currentIndex: nil, into: &output, depth: 0, budget: &budget)
         }
         return output
     }
@@ -207,7 +217,12 @@ public enum TemplateEngine {
             case .blockOpen(let kind, let variable):
                 index += 1
                 if depth >= maxNestingDepth {
-                    nodes.append(.text("{{\(blockOpenText(kind, variable))}}"))
+                    // Guarda anti-DoS: no seguimos recursando el parser. Serializamos el
+                    // bloque entero (apertura + cuerpo + cierre balanceado) como texto
+                    // literal y consumimos su cierre correspondiente, de modo que el stream
+                    // de tokens queda balanceado (antes se fugaban `{{/if}}` huérfanos al
+                    // nivel padre y corrompían la salida — incluso con la condición a false).
+                    nodes.append(.text(flattenBlockAsText(kind: kind, variable: variable, tokens: tokens, index: &index)))
                 } else {
                     let body = parseNodes(tokens: tokens, index: &index, until: kind, depth: depth + 1)
                     switch kind {
@@ -229,38 +244,74 @@ public enum TemplateEngine {
         return nodes
     }
 
+    /// Serializa un bloque que supera `maxNestingDepth` como texto literal, consumiendo
+    /// sus tokens hasta el cierre que balancea la apertura (contando anidamientos del
+    /// mismo tipo). `index` queda posicionado tras el cierre consumido.
+    private static func flattenBlockAsText(kind: BlockKind, variable: String, tokens: [TemplateToken], index: inout Int) -> String {
+        var literal = "{{\(blockOpenText(kind, variable))}}"
+        var sameKindDepth = 0
+        var closed = false
+        while index < tokens.count, !closed {
+            let token = tokens[index]
+            index += 1
+            literal += tokenSource(token)
+            switch token {
+            case .blockOpen(let k, _) where k == kind:
+                sameKindDepth += 1
+            case .blockClose(let k) where k == kind:
+                if sameKindDepth == 0 { closed = true } else { sameKindDepth -= 1 }
+            default:
+                break
+            }
+        }
+        return literal
+    }
+
+    /// Reconstruye el texto fuente de un token (para el aplanamiento literal).
+    private static func tokenSource(_ token: TemplateToken) -> String {
+        switch token {
+        case .text(let s): return s
+        case .variable(let name, let def): return def.isEmpty ? "{{\(name)}}" : "{{\(name)=\(def)}}"
+        case .blockOpen(let kind, let variable): return "{{\(blockOpenText(kind, variable))}}"
+        case .blockClose(let kind): return "{{/\(kind.rawValue)}}"
+        case .dot: return "{{.}}"
+        case .index: return "{{@index}}"
+        }
+    }
+
     private static func blockOpenText(_ kind: BlockKind, _ variable: String) -> String {
         "#\(kind.rawValue) \(variable)"
     }
 
     // MARK: — Renderer
 
-    private static func renderNode(_ node: TemplateNode, lookup: [String: String], currentItem: String?, currentIndex: Int?, into output: inout String, depth: Int) {
+    private static func renderNode(_ node: TemplateNode, lookup: [String: String], currentItem: String?, currentIndex: Int?, into output: inout String, depth: Int, budget: inout Int) {
+        guard budget > 0 else { return }
         switch node {
         case .text(let s):
-            output += s
+            appendClamped(s, into: &output, budget: &budget)
 
         case .variable(let name, let def):
             if let val = lookup[name] {
-                output += val
+                appendClamped(val, into: &output, budget: &budget)
             } else if !def.isEmpty {
-                output += def
+                appendClamped(def, into: &output, budget: &budget)
             } else {
-                output += "{{\(name)}}"
+                appendClamped("{{\(name)}}", into: &output, budget: &budget)
             }
 
         case .currentValue:
             if let item = currentItem {
-                output += item
+                appendClamped(item, into: &output, budget: &budget)
             } else {
-                output += "{{.}}"
+                appendClamped("{{.}}", into: &output, budget: &budget)
             }
 
         case .currentIndex:
             if let idx = currentIndex {
-                output += String(idx)
+                appendClamped(String(idx), into: &output, budget: &budget)
             } else {
-                output += "{{@index}}"
+                appendClamped("{{@index}}", into: &output, budget: &budget)
             }
 
         case .ifBlock(let variable, let body):
@@ -268,7 +319,8 @@ public enum TemplateEngine {
             let val = lookup[variable] ?? ""
             if !val.isEmpty {
                 for child in body {
-                    renderNode(child, lookup: lookup, currentItem: currentItem, currentIndex: currentIndex, into: &output, depth: depth + 1)
+                    guard budget > 0 else { break }
+                    renderNode(child, lookup: lookup, currentItem: currentItem, currentIndex: currentIndex, into: &output, depth: depth + 1, budget: &budget)
                 }
             }
 
@@ -277,7 +329,8 @@ public enum TemplateEngine {
             let val = lookup[variable] ?? ""
             if val.isEmpty {
                 for child in body {
-                    renderNode(child, lookup: lookup, currentItem: currentItem, currentIndex: currentIndex, into: &output, depth: depth + 1)
+                    guard budget > 0 else { break }
+                    renderNode(child, lookup: lookup, currentItem: currentItem, currentIndex: currentIndex, into: &output, depth: depth + 1, budget: &budget)
                 }
             }
 
@@ -287,43 +340,70 @@ public enum TemplateEngine {
             let items = val.split(separator: ",", omittingEmptySubsequences: true)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
             for (idx, item) in items.prefix(maxIterations).enumerated() {
+                guard budget > 0 else { break }
                 for child in body {
-                    renderNode(child, lookup: lookup, currentItem: item, currentIndex: idx, into: &output, depth: depth + 1)
+                    guard budget > 0 else { break }
+                    renderNode(child, lookup: lookup, currentItem: item, currentIndex: idx, into: &output, depth: depth + 1, budget: &budget)
                 }
             }
         }
     }
 
+    /// Añade `s` a la salida respetando el presupuesto global de caracteres. Si `s`
+    /// excede lo que queda, añade solo el prefijo permitido y agota el presupuesto.
+    private static func appendClamped(_ s: String, into output: inout String, budget: inout Int) {
+        guard budget > 0 else { return }
+        if s.count <= budget {
+            output += s
+            budget -= s.count
+        } else {
+            output += s.prefix(budget)
+            budget = 0
+        }
+    }
+
     // MARK: — Variable extraction
 
-    private static func collectVariables(from nodes: [TemplateNode], seen: inout Set<String>, vars: inout [TemplateVariable]) {
+    /// Recorre el AST recogiendo todos los nombres usados como fuente de un `#each`.
+    private static func eachVariableNames(in nodes: [TemplateNode]) -> Set<String> {
+        var names = Set<String>()
+        for node in nodes {
+            switch node {
+            case .eachBlock(let variable, let body):
+                names.insert(variable)
+                names.formUnion(eachVariableNames(in: body))
+            case .ifBlock(_, let body), .unlessBlock(_, let body):
+                names.formUnion(eachVariableNames(in: body))
+            case .text, .variable, .currentValue, .currentIndex:
+                break
+            }
+        }
+        return names
+    }
+
+    private static func collectVariables(from nodes: [TemplateNode], listNames: Set<String>, seen: inout Set<String>, vars: inout [TemplateVariable]) {
+        func add(_ name: String, defaultValue: String = "") {
+            guard !seen.contains(name) else { return }
+            seen.insert(name)
+            let kind: VariableKind = listNames.contains(name) ? .list : .scalar
+            vars.append(TemplateVariable(name: name, defaultValue: defaultValue, kind: kind))
+        }
         for node in nodes {
             switch node {
             case .variable(let name, let def):
-                guard !seen.contains(name) else { continue }
-                seen.insert(name)
-                vars.append(TemplateVariable(name: name, defaultValue: def, kind: .scalar))
+                add(name, defaultValue: def)
 
             case .ifBlock(let variable, let body):
-                if !seen.contains(variable) {
-                    seen.insert(variable)
-                    vars.append(TemplateVariable(name: variable, kind: .scalar))
-                }
-                collectVariables(from: body, seen: &seen, vars: &vars)
+                add(variable)
+                collectVariables(from: body, listNames: listNames, seen: &seen, vars: &vars)
 
             case .unlessBlock(let variable, let body):
-                if !seen.contains(variable) {
-                    seen.insert(variable)
-                    vars.append(TemplateVariable(name: variable, kind: .scalar))
-                }
-                collectVariables(from: body, seen: &seen, vars: &vars)
+                add(variable)
+                collectVariables(from: body, listNames: listNames, seen: &seen, vars: &vars)
 
             case .eachBlock(let variable, let body):
-                if !seen.contains(variable) {
-                    seen.insert(variable)
-                    vars.append(TemplateVariable(name: variable, kind: .list))
-                }
-                collectVariables(from: body, seen: &seen, vars: &vars)
+                add(variable)
+                collectVariables(from: body, listNames: listNames, seen: &seen, vars: &vars)
 
             case .text, .currentValue, .currentIndex:
                 break
