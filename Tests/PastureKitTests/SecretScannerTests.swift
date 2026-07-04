@@ -69,7 +69,10 @@ struct SecretScannerTests {
 
     @Test("Detects AWS temporary/STS access key (ASIA...)")
     func detectsAWSTemporary() {
-        let result = SecretScanner.scan(fileName: "aws.md", content: "AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE")
+        // Fixture por concatenación: la variante ASIA de la clave de ejemplo de AWS
+        // no está en la allowlist del secret scanning de GitHub (la AKIA sí).
+        let secret = "ASIA" + "IOSFODNN7EXAMPLE"
+        let result = SecretScanner.scan(fileName: "aws.md", content: "AWS_ACCESS_KEY_ID=\(secret)")
         #expect(result.kinds.contains(.awsAccessKey))
     }
 
