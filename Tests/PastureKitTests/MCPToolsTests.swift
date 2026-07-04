@@ -160,6 +160,22 @@ import Foundation
         #expect(text(result).localizedCaseInsensitiveContains("grande"))
     }
 
+    /// SEC-M5: en feed_context, un fichero que por sí solo excede el cap se OMITE
+    /// (sin cargarlo entero) y aparece como ausente; los demás se ensamblan igual.
+    @Test func feedContextSkipsOversizedFileWithoutFailing() {
+        let (config, root) = makeVault()
+        let huge = String(repeating: "A", count: MCPLimits.maxResponseBytes + 1)
+        write(huge, to: "huge.md", in: root)
+        write("contenido ok", to: "small.md", in: root)
+        let result = MCPTools.feedContext(
+            arguments: callArgs(["files": .array([.string("huge.md"), .string("small.md")])]),
+            config: config)
+        #expect(!result.isError)
+        #expect(text(result).contains("contenido ok"))
+        // El gigante se señala como ausente en el warning, no se entrega su contenido.
+        #expect(result.warning?.localizedCaseInsensitiveContains("huge.md") ?? false)
+    }
+
     // MARK: — Bloque 5: list_files (HU-8)
 
     @Test func listFilesReportsPathsAndCollections() {

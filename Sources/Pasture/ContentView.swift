@@ -427,7 +427,6 @@ struct ContentView: View {
     private func exportFeedToDisk() {
         let targets = feedTargets
         guard !targets.isEmpty else { return }
-        let context = fm.feedContext(files: targets)
         let panel = NSSavePanel()
         let label = targets.count == 1 ? targets[0].name : "context-\(targets.count)-files"
         let format = ExportSettings.fileFormat()
@@ -435,12 +434,10 @@ struct ContentView: View {
         panel.allowedContentTypes = format.allowedContentTypes
         panel.message = "Export feed context"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try context.write(to: url, atomically: true, encoding: .utf8)
-            feedService.showFeedback("Exported to \(url.lastPathComponent)")
-        } catch {
-            feedService.showFeedback("Export failed: \(error.localizedDescription)", isError: true)
-        }
+        // El contenido lo produce FeedService, que aplica la sustitución de plantillas
+        // y el escaneo de secretos ANTES de escribir (auditoría 2.1: antes esta ruta
+        // escribía a disco sin ninguna de las dos guardas).
+        feedService.exportToDisk(targets: targets, url: url, fm: fm)
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {

@@ -67,6 +67,37 @@ import Foundation
         #expect(MCPLimits.maxInputLineBytes == 10_000_000)
     }
 
+    /// REGRESIÓN (auditoría QA): recuperación de una línea oversized cuando el `\n`
+    /// de recuperación llega en el MISMO chunk que datos posteriores (streaming real,
+    /// dos `availableData()` separados). El bug original dejaba el `\n` al inicio del
+    /// buffer, y `next()` lo entregaba como una línea vacía fantasma antes de la línea
+    /// válida. Con el fix, sólo deben salir las líneas realmente enviadas.
+    @Test func recoversFromOversizedWithNewlineInSameChunkAsData() {
+        let pipe = Pipe()
+        let reader = MCPLineReader(handle: pipe.fileHandleForReading, maxLineBytes: 10)
+
+        // Paso 1: escribir la línea oversized SIN su `\n`. Como el buffer supera el cap
+        // sin newline, `next()` devuelve `.oversized` de inmediato (sin leer más) y entra
+        // en modo descarte. Ordenación determinista: no depende de cómo el pipe agrupe
+        // los chunks.
+        pipe.fileHandleForWriting.write(Data(String(repeating: "x", count: 50).utf8))
+        let first = reader.next()
+        #expect(first == .oversized)
+
+        // Paso 2: ahora el `\n` de recuperación llega PEGADO a la siguiente línea válida,
+        // en un único chunk. Aquí se fabricaba la línea vacía fantasma (el `\n` quedaba
+        // al inicio del buffer y se leía como `.line("")`).
+        pipe.fileHandleForWriting.write(Data("\nvalid\n".utf8))
+        try? pipe.fileHandleForWriting.close()
+
+        var lines: [String] = []
+        while let result = reader.next() {
+            if case .line(let value) = result { lines.append(value) }
+        }
+        // Sólo debe salir "valid"; ninguna línea vacía fantasma.
+        #expect(lines == ["valid"])
+    }
+
     /// REGRESIÓN (bloqueo de entrega v1.5): el reader debe entregar una línea
     /// completa EN CUANTO llega, sin esperar a que se cierre el extremo de
     /// escritura (EOF). El bug original (`read(upToCount:)` bloquea hasta reunir

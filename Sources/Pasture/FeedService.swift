@@ -4,6 +4,15 @@ import PastureKit
 
 @MainActor
 final class FeedService: ObservableObject {
+    /// Destino de entrega de un feed. Unifica las tres vías para que TODAS pasen por
+    /// el mismo camino guardado (detección de plantillas + escaneo de secretos). El
+    /// export a disco ad-hoc (`.fileURL`) es un caso más, no una ruta paralela sin guardas.
+    enum DeliveryTarget {
+        case clipboard
+        case destination(ExportDestination)
+        case fileURL(URL)
+    }
+
     @Published var showTemplateSheet = false
     @Published var templateVariables: [TemplateVariable] = []
     @Published var feedbackMessage: String?
@@ -15,11 +24,23 @@ final class FeedService: ObservableObject {
     private var pendingSecretProceed: (@MainActor () -> Void)?
 
     private(set) var pendingFeedTargets: [MDFile] = []
-    private(set) var pendingDestination: ExportDestination?
+    private var pendingTarget: DeliveryTarget = .clipboard
     private var clipboardClearTask: Task<Void, Never>?
     private var feedbackDismissTask: Task<Void, Never>?
 
     func executeFeed(targets: [MDFile], destination: ExportDestination?, fm: MDFileManager) {
+        let target: DeliveryTarget = destination.map(DeliveryTarget.destination) ?? .clipboard
+        beginFeed(targets: targets, target: target, fm: fm)
+    }
+
+    /// Export a disco a una ruta elegida por el usuario (NSSavePanel), CON las mismas
+    /// guardas que el resto de feeds: sustitución de plantillas y escaneo de secretos.
+    /// Cierra el bypass del botón "Export" de la toolbar (auditoría 2.1).
+    func exportToDisk(targets: [MDFile], url: URL, fm: MDFileManager) {
+        beginFeed(targets: targets, target: .fileURL(url), fm: fm)
+    }
+
+    private func beginFeed(targets: [MDFile], target: DeliveryTarget, fm: MDFileManager) {
         guard !targets.isEmpty else { return }
 
         let allContent = targets.map(\.content).joined(separator: "\n")
@@ -28,7 +49,7 @@ final class FeedService: ObservableObject {
         if !allVars.isEmpty {
             templateVariables = allVars
             pendingFeedTargets = targets
-            pendingDestination = destination
+            pendingTarget = target
             showTemplateSheet = true
             return
         }
@@ -37,7 +58,7 @@ final class FeedService: ObservableObject {
         let inputs = scanInputs(for: targets, renderedContents: nil)
         guardSecrets(inputs: inputs) { [weak self] in
             guard let self else { return }
-            self.deliverFeed(context: fm.feedContext(files: targets), targets: targets, destination: destination, fm: fm)
+            self.deliverFeed(context: fm.feedContext(files: targets), targets: targets, target: target, fm: fm)
         }
     }
 
@@ -47,7 +68,7 @@ final class FeedService: ObservableObject {
             rendered[file.url] = TemplateEngine.render(file.content, with: templateVariables)
         }
         let targets = pendingFeedTargets
-        let destination = pendingDestination
+        let target = pendingTarget
         // ADR-002: el escaneo va sobre el contenido RENDERIZADO (post-templates),
         // no el crudo con {{VARS}}. Un secreto inyectado por una variable se detecta.
         let inputs = scanInputs(for: targets, renderedContents: rendered)
@@ -57,7 +78,7 @@ final class FeedService: ObservableObject {
             self.deliverFeed(
                 context: fm.feedContext(files: targets, renderedContents: rendered),
                 targets: targets,
-                destination: destination,
+                target: target,
                 fm: fm
             )
         }
@@ -136,22 +157,30 @@ final class FeedService: ObservableObject {
         showTemplateSheet = false
         pendingFeedTargets = []
         templateVariables = []
-        pendingDestination = nil
+        pendingTarget = .clipboard
     }
 
-    private func deliverFeed(context: String, targets: [MDFile], destination: ExportDestination?, fm: MDFileManager) {
+    private func deliverFeed(context: String, targets: [MDFile], target: DeliveryTarget, fm: MDFileManager) {
         let label = targets.count == 1 ? targets[0].name : "\(targets.count) files"
         let tokenLabel = "~\(TokenEstimator.formatted(fm.totalTokens(for: targets))) tokens"
 
-        if let dest = destination {
+        switch target {
+        case .clipboard:
+            copyToClipboard(context, message: "Copied \(label) \u{b7} \(tokenLabel)")
+        case .destination(let dest):
             do {
                 try fm.exportToFile(context, to: dest)
                 showFeedback("\(dest.name) \u{2190} \(label) \u{b7} \(tokenLabel)")
             } catch {
                 showFeedback("Export failed: \(error.localizedDescription)", isError: true)
             }
-        } else {
-            copyToClipboard(context, message: "Copied \(label) \u{b7} \(tokenLabel)")
+        case .fileURL(let url):
+            do {
+                try context.write(to: url, atomically: true, encoding: .utf8)
+                showFeedback("Exported to \(url.lastPathComponent) \u{b7} \(tokenLabel)")
+            } catch {
+                showFeedback("Export failed: \(error.localizedDescription)", isError: true)
+            }
         }
     }
 

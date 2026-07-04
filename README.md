@@ -211,10 +211,11 @@ Sources/
 │   ├── DirectoryWatcher.swift — DispatchSource file watching (debounced)
 │   ├── SettingsView.swift     — Export, AI, and MCP settings tabs
 │   ├── DesignTokens.swift     — Design system
+│   ├── TemplateEngine.swift   — @_exported re-export of PastureKit
 │   └── AppDelegate.swift
 ├── pasture-mcp/               — MCP server executable
 │   └── main.swift             — Thin transport loop (stdin → MCPLineReader → MCPDispatcher → stdout)
-└── Tests/PastureKitTests/     — 491 tests (Swift Testing framework)
+└── Tests/PastureKitTests/     — 501 tests (Swift Testing framework)
 ```
 
 No CoreData, no SwiftData, no external dependencies.

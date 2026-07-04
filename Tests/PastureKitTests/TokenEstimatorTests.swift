@@ -154,12 +154,19 @@ struct TokenEstimatorTests {
 
     // MARK: - costEstimate
 
-    @Test("costEstimate devuelve string formateado no vacio")
+    @Test("costEstimate devuelve un coste monetario formateado")
     func costEstimateReturnsFormattedString() {
         let model = AIModel(id: "test", displayName: "Test", provider: .anthropic,
                             contextWindow: 200_000, inputCostPer1M: 3.0, outputCostPer1M: 15.0)
         let result = TokenEstimator.costEstimate(contextTokens: 1000, question: "Hello", model: model)
-        #expect(!result.isEmpty)
+        // Con un modelo de pago y 1024 tokens de salida asumidos, el coste es positivo:
+        // debe formatearse como cantidad en dólares (contiene "$"), no una cadena vacía.
+        #expect(result.contains("$"))
+        // Debe coincidir con el formateo directo del coste calculado (no un valor arbitrario).
+        let input = TokenEstimator.inputTokenEstimate(contextTokens: 1000, question: "Hello")
+        let expected = TokenEstimator.formattedCost(
+            TokenEstimator.estimatedCost(inputTokens: input, outputTokens: 1024, model: model))
+        #expect(result == expected)
     }
 
     @Test("costEstimate con modelo gratuito devuelve zero")

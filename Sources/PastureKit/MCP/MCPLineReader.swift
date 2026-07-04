@@ -100,7 +100,12 @@ public final class MCPLineReader {
             // En modo descarte no acumulamos bytes salvo para encontrar el `\n`.
             if discardingUntilNewline {
                 if let newlineIndex = chunk.firstIndex(of: Self.newline) {
-                    buffer = Data(chunk[newlineIndex...])   // reanuda tras el `\n`
+                    // Reanuda TRAS el `\n` (excluyéndolo): ese `\n` cierra la cola de la
+                    // línea oversized descartada. Si se dejara al inicio del buffer,
+                    // `next()` lo leería como una línea vacía fantasma que el cliente
+                    // nunca envió — sólo se manifiesta cuando el `\n` de recuperación
+                    // llega en el mismo chunk que datos posteriores (streaming real).
+                    buffer = Data(chunk[chunk.index(after: newlineIndex)...])
                     discardingUntilNewline = false
                 }
                 // Si no hay `\n`, se descarta el chunk entero (no crece la RAM).

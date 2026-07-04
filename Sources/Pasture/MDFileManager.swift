@@ -80,6 +80,15 @@ final class MDFileManager: ObservableObject {
         if !fm.fileExists(atPath: Self.pastureDir.path) {
             try? fm.createDirectory(at: Self.pastureDir, withIntermediateDirectories: true)
         }
+        // Verificamos el resultado como en resolveTargetDirectory: si el vault raíz no
+        // se pudo crear (permisos, disco lleno, home de solo lectura), el watcher y
+        // loadFiles fallarían en silencio y la app se vería vacía sin ninguna pista.
+        // Fijamos lastError para que el fallo sea visible.
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: Self.pastureDir.path, isDirectory: &isDir), isDir.boolValue else {
+            lastError = "Cannot create the Pasture directory at \(Self.pastureDir.path)"
+            return
+        }
         watcher.onChange = { [weak self] in
             self?.loadFiles()
         }

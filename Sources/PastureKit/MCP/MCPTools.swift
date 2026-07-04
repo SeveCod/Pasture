@@ -167,11 +167,17 @@ public enum MCPTools {
             return .failure("ruta fuera del vault")
         }
 
+        // SEC-M5: rechazar por TAMAÑO EN DISCO antes de leer, para no materializar un
+        // fichero gigante en RAM sólo para descartarlo después.
+        if let onDisk = fileSizeOnDisk(resolved), onDisk > MCPLimits.maxResponseBytes {
+            return .failure("fichero demasiado grande, no se puede entregar")
+        }
+
         guard let content = try? String(contentsOf: resolved, encoding: .utf8) else {
             return .failure("fichero no encontrado")
         }
 
-        // SEC-M5: rechazar respuestas gigantes antes de serializar.
+        // SEC-M5: segunda barrera exacta sobre los bytes UTF-8 ya cargados.
         if content.utf8.count > MCPLimits.maxResponseBytes {
             return .failure("fichero demasiado grande, no se puede entregar")
         }
@@ -179,6 +185,12 @@ public enum MCPTools {
         // SEC-M8 (D4): warning no bloqueante si hay secretos. Contenido íntegro.
         let warning = secretWarning(fileName: resolved.lastPathComponent, content: content)
         return .ok(content, warning: warning)
+    }
+
+    /// SEC-M5: tamaño en disco (bytes) de un fichero, o `nil` si no se puede leer.
+    /// Permite rechazar ficheros gigantes ANTES de materializarlos en RAM.
+    static func fileSizeOnDisk(_ url: URL) -> Int? {
+        (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
     }
 
     /// SEC-M8 (D4): resumen enmascarado de secretos (familia + fichero), NUNCA el
@@ -297,6 +309,13 @@ public enum MCPTools {
             case .failure:
                 missing.append(name)
             case .success(let url):
+                // SEC-M5: omitir ficheros que por sí solos ya exceden el cap de respuesta,
+                // sin cargarlos en RAM. El check final del payload ensamblado sigue en
+                // feedContext; esto evita el pico de memoria por un único fichero gigante.
+                if let onDisk = fileSizeOnDisk(url), onDisk > MCPLimits.maxResponseBytes {
+                    missing.append(name)
+                    continue
+                }
                 guard let content = try? String(contentsOf: url, encoding: .utf8) else {
                     missing.append(name)
                     continue
