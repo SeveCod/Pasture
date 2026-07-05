@@ -17,6 +17,16 @@ public enum PackWriter {
     /// AC#3: máximo de backups retenidos por destino.
     public static let maxBackupsPerTarget = 10
 
+    /// Raíz de backups por defecto: `~/Library/Application Support/Pasture/backups/`
+    /// — fuera del repo del usuario y del vault (AC#3).
+    public static func defaultBackupsRoot() -> URL {
+        let base = (try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false))
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base.appendingPathComponent("Pasture/backups", isDirectory: true)
+    }
+
     public enum WriteOutcome: Equatable, Sendable {
         /// Creado (destino ausente) o sobrescrito (destino limpio / overwrite confirmado).
         case written(bodyHash: String)

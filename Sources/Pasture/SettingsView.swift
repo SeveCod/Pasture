@@ -9,6 +9,8 @@ struct SettingsView: View {
                 .tabItem { Label("Export", systemImage: "square.and.arrow.up") }
             AISettingsTab()
                 .tabItem { Label("AI", systemImage: "brain") }
+            PacksSettingsTab()
+                .tabItem { Label("Packs", systemImage: "shippingbox") }
             MCPSettingsTab()
                 .tabItem { Label("MCP", systemImage: "powerplug") }
         }
