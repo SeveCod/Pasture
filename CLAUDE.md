@@ -13,7 +13,7 @@ The detail panel toggles between a read-only Markdown preview and an Ask mode fo
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
-swift test               # Run all PastureKit unit tests (595 tests, Swift Testing framework)
+swift test               # Run all PastureKit unit tests (607 tests, Swift Testing framework)
 swift test --filter TemplateEngineTests                        # Run one test suite
 swift test --filter TemplateEngineTests/renderSimpleReplacement # Run a single test
 swift test --filter MCPDispatcherTests                         # MCP dispatcher tests
@@ -35,7 +35,7 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 - **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security), `FileLibrary` (filesystem queries: async library scan, dedup URLs, hidden/symlink filtering), `DocumentImporter` (PDF/CSV/DOCX → Markdown conversion, no persistence), `FeedFormat`/`FeedFormatSettings` (feed payload format enum + UserDefaults persistence), `SecretScanner` (pre-feed credential detector), `ContextLimit` (binary context-window guard for sidebar), `SelectionPreset`/`SelectionPresetStore` (named file selections with relative-path persistence), `PresetResolver` (relative-path → URL resolution with path-traversal guard). Also contains the full MCP layer — see **MCP layer** subsection below. All public. This is the testable module.
 - **Pasture** (`Sources/Pasture/`) — SwiftUI app. Re-exports PastureKit via `@_exported import PastureKit` in `TemplateEngine.swift`.
 - **pasture-mcp** (`Sources/pasture-mcp/`) — MCP server executable. A thin `main.swift` (~30 lines) that wires `FileHandle.standardInput` to `MCPLineReader` and feeds each line to `MCPDispatcher`. All protocol logic lives in PastureKit (ADR-MCP-004). Zero external dependencies beyond PastureKit and Foundation.
-- **PastureKitTests** (`Tests/PastureKitTests/`) — 595 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 9 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`, `MCPResourcesTests`, `MCPPromptsTests`.
+- **PastureKitTests** (`Tests/PastureKitTests/`) — 607 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 9 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`, `MCPResourcesTests`, `MCPPromptsTests`.
 
 ### Data flow
 
@@ -134,6 +134,7 @@ Notes can declare expiry in a YAML-lite frontmatter block; stale notes are surfa
 - **`MDFile`** gains a computed `frontmatter` (parsed in `init(url:)` / `updateDerivedProperties`) and `freshness(now:)`. Identifiable/Hashable/Equatable by URL unchanged.
 - **MCP staleness (SEC-M8)** — `MCPTools.stalenessWarning`/`staleLabel` add `"stale: N days since last review"` (read_file) or a per-file list (feed_context) to the non-blocking `warning` channel, combined with secret/missing notices via `joinWarnings`/`combinedWarning`. Content unchanged; the server stays read-only (SEC-M11) — writing `last_reviewed` is GUI-only.
 - **GUI**: `FileRow` shows a clock badge for stale notes; `SidebarView` shows a "N notes need review" banner opening `ReviewQueueSheet` (Mark reviewed → `MDFileManager.markReviewed`).
+- **Local sources (Fase B)** — a note with `source: <folder>` re-imports that folder's `.md` into the note's collection, marked `generated: true`, on demand ("File → Refresh Sources", Cmd+Shift+R → `MDFileManager.refreshSources`). `SourceValidator` requires an existing local directory outside `~/.pasture/` (rejects a file, missing path, or symlink resolving into the vault — anti-loop). `SourceImportDecision` is non-destructive: overwrite only if the destination still carries `generated: true`; a hand-authored file or an unlinked note (flag removed) is protected (`.skipUnlinked`). `FrontmatterWriter.markingGenerated` injects the flag; generated notes show a "Generated" mark in `EditorStatusBar`. v1 is local folders only, `.md` only, cap 500, no network/commands. The MCP server does not participate (writing stays GUI-only, SEC-M11).
 
 #### Context Compiler (v1.6, PastureKit core — GUI wiring is a follow-up)
 

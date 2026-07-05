@@ -66,6 +66,10 @@ struct ContentView: View {
                 feedService.showFeedback(summary)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshSources)) { _ in
+            let summary = fm.refreshSources()
+            feedService.showFeedback(summary.message, isError: summary.sourcesFailed > 0)
+        }
         .onReceive(NotificationCenter.default.publisher(for: ExportSettings.didChangeNotification)) { _ in
             exportDestinations = ExportSettings.loadDestinations()
         }

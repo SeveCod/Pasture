@@ -31,6 +31,11 @@ struct PastureApp: App {
                     NotificationCenter.default.post(name: .syncAllPacks, object: nil)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Button("Refresh Sources") {
+                    NotificationCenter.default.post(name: .refreshSources, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
             }
             CommandMenu("View") {
                 Button("Toggle Ask Mode") {
@@ -57,4 +62,5 @@ extension Notification.Name {
     static let openInEditor = Notification.Name("openInEditor")
     static let toggleAskMode = Notification.Name("toggleAskMode")
     static let syncAllPacks = Notification.Name("syncAllPacks")
+    static let refreshSources = Notification.Name("refreshSources")
 }

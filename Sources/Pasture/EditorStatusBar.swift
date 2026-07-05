@@ -31,6 +31,13 @@ struct EditorStatusBar: View {
                 TemplateBadge(compact: false, colorScheme: colorScheme)
             }
 
+            if file.frontmatter?.generated == true {
+                Label("Generated", systemImage: "sparkles")
+                    .font(.pastureStatusBar)
+                    .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                    .help("Imported from a source folder — a refresh will overwrite manual edits unless you remove 'generated: true'.")
+            }
+
             Spacer()
 
             Button(action: onOpenInEditor) {

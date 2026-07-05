@@ -9,18 +9,26 @@ public enum FrontmatterWriter {
     /// un bloque frontmatter, actualiza/inserta la clave conservando el resto; si
     /// no, antepone un bloque nuevo. El cuerpo no se toca.
     public static func settingLastReviewed(in content: String, to date: Date) -> String {
-        let iso = isoString(date)
+        setting(key: "last_reviewed", value: isoString(date), in: content)
+    }
+
+    /// Devuelve el contenido con `generated: true` fijado (marca de nota importada
+    /// desde una fuente). Mismo contrato preservador de cuerpo.
+    public static func markingGenerated(in content: String) -> String {
+        setting(key: "generated", value: "true", in: content)
+    }
+
+    /// Inserta/actualiza `key: value` en el bloque frontmatter, conservando el
+    /// resto de claves y el cuerpo. Antepone un bloque nuevo si no había.
+    static func setting(key: String, value: String, in content: String) -> String {
         let parsed = FrontmatterParser.parse(content)
-
-        // Sin bloque válido → anteponer uno nuevo.
         guard parsed.frontmatter != nil, var lines = extractBlockLines(content) else {
-            return "---\nlast_reviewed: \(iso)\n---\n" + content
+            return "---\n\(key): \(value)\n---\n" + content
         }
-
-        if let idx = lines.firstIndex(where: { keyOf($0) == "last_reviewed" }) {
-            lines[idx] = "last_reviewed: \(iso)"
+        if let idx = lines.firstIndex(where: { keyOf($0) == key }) {
+            lines[idx] = "\(key): \(value)"
         } else {
-            lines.append("last_reviewed: \(iso)")
+            lines.append("\(key): \(value)")
         }
         let newBlock = "---\n" + lines.joined(separator: "\n") + "\n---\n"
         return newBlock + parsed.body
