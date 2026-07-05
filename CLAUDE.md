@@ -13,7 +13,7 @@ The detail panel toggles between a read-only Markdown preview and an Ask mode fo
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
-swift test               # Run all PastureKit unit tests (567 tests, Swift Testing framework)
+swift test               # Run all PastureKit unit tests (595 tests, Swift Testing framework)
 swift test --filter TemplateEngineTests                        # Run one test suite
 swift test --filter TemplateEngineTests/renderSimpleReplacement # Run a single test
 swift test --filter MCPDispatcherTests                         # MCP dispatcher tests
@@ -35,7 +35,7 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 - **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security), `FileLibrary` (filesystem queries: async library scan, dedup URLs, hidden/symlink filtering), `DocumentImporter` (PDF/CSV/DOCX → Markdown conversion, no persistence), `FeedFormat`/`FeedFormatSettings` (feed payload format enum + UserDefaults persistence), `SecretScanner` (pre-feed credential detector), `ContextLimit` (binary context-window guard for sidebar), `SelectionPreset`/`SelectionPresetStore` (named file selections with relative-path persistence), `PresetResolver` (relative-path → URL resolution with path-traversal guard). Also contains the full MCP layer — see **MCP layer** subsection below. All public. This is the testable module.
 - **Pasture** (`Sources/Pasture/`) — SwiftUI app. Re-exports PastureKit via `@_exported import PastureKit` in `TemplateEngine.swift`.
 - **pasture-mcp** (`Sources/pasture-mcp/`) — MCP server executable. A thin `main.swift` (~30 lines) that wires `FileHandle.standardInput` to `MCPLineReader` and feeds each line to `MCPDispatcher`. All protocol logic lives in PastureKit (ADR-MCP-004). Zero external dependencies beyond PastureKit and Foundation.
-- **PastureKitTests** (`Tests/PastureKitTests/`) — 567 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 9 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`, `MCPResourcesTests`, `MCPPromptsTests`.
+- **PastureKitTests** (`Tests/PastureKitTests/`) — 595 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 9 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`, `MCPResourcesTests`, `MCPPromptsTests`.
 
 ### Data flow
 
@@ -123,6 +123,17 @@ Twelve files under `Sources/PastureKit/MCP/`. All logic is pure Swift, `Sendable
 - **`SelectionPreset`** — `Codable`, `Sendable`, `Hashable`, `Identifiable` struct. Fields: `id` (UUID), `name` (max 80 chars, control characters stripped by `sanitizedName(_:)`), `relativePaths` ([String] relative to `~/.pasture/`), `createdAt`. Never stores file content, absolute URLs, or API keys (ADR-QW-003). `missingFilesMessage(missingPaths:)` produces the actionable toast string.
 - **`SelectionPresetStore`** — Static namespace for UserDefaults CRUD of `[SelectionPreset]`. Methods: `load`, `save`, `upsert`, `delete`, `rename`, `preset(named:)` (case-insensitive, for overwrite confirmation). Cap: 100 presets. Fires `didChangeNotification` on every mutation.
 - **`PresetResolver`** — Static `nonisolated` enum. `resolve(relativePaths:base:)` converts relative paths to absolute URLs, silently discarding any that fail `PathValidator.isInside` (path-traversal guard, SEC-9). `missingPaths(relativePaths:base:existing:)` returns the subset not present on disk (or rejected by traversal check), for the actionable toast. `relativePath(for:base:)` converts a URL back to a relative path when saving a new preset from the current selection.
+
+#### Living context — freshness (v1.7 Fase A, shipped under v1.6.0)
+
+Notes can declare expiry in a YAML-lite frontmatter block; stale notes are surfaced in the GUI and annotated over MCP. Local re-importable sources (`source`/`generated`) are deferred (Fase B).
+
+- **`FrontmatterParser` / `Frontmatter`** — hand-rolled `key: value` parser (no YAML dependency, SEC-M10), tolerant by design (malformed/oversized → degrades to no metadata, never throws; capped at 8 KB/64 lines). Keys v1: `review_after`, `ttl`, `last_reviewed`, `source`, `generated`. `parse(_:)` returns `(frontmatter, body)` with the block stripped.
+- **`Freshness`** — pure `nonisolated` enum, clock injected (same pattern as `ContextLimit`). `state(frontmatter:reference:now:)` → `.fresh` / `.expired(daysSinceReview:)`. No expiry declared → always fresh (no regression). `reference` (a note's modified date) is the fallback when there's no `last_reviewed`.
+- **`FrontmatterWriter`** — pure string transform `settingLastReviewed(in:to:)` used by the review queue to mark a note reviewed (inserts/updates `last_reviewed`, preserves the body; prepends a block if none). The disk write lives in `MDFileManager.markReviewed`.
+- **`MDFile`** gains a computed `frontmatter` (parsed in `init(url:)` / `updateDerivedProperties`) and `freshness(now:)`. Identifiable/Hashable/Equatable by URL unchanged.
+- **MCP staleness (SEC-M8)** — `MCPTools.stalenessWarning`/`staleLabel` add `"stale: N days since last review"` (read_file) or a per-file list (feed_context) to the non-blocking `warning` channel, combined with secret/missing notices via `joinWarnings`/`combinedWarning`. Content unchanged; the server stays read-only (SEC-M11) — writing `last_reviewed` is GUI-only.
+- **GUI**: `FileRow` shows a clock badge for stale notes; `SidebarView` shows a "N notes need review" banner opening `ReviewQueueSheet` (Mark reviewed → `MDFileManager.markReviewed`).
 
 #### Context Compiler (v1.6, PastureKit core — GUI wiring is a follow-up)
 

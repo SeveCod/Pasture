@@ -182,9 +182,31 @@ public enum MCPTools {
             return .failure("fichero demasiado grande, no se puede entregar")
         }
 
-        // SEC-M8 (D4): warning no bloqueante si hay secretos. Contenido íntegro.
-        let warning = secretWarning(fileName: resolved.lastPathComponent, content: content)
+        // SEC-M8 (D4): warning no bloqueante (secretos + staleness). Contenido íntegro.
+        // La fecha de modificación es la referencia cuando no hay `last_reviewed`.
+        let reference = (try? resolved.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+        let warning = joinWarnings([
+            secretWarning(fileName: resolved.lastPathComponent, content: content),
+            stalenessWarning(content: content, reference: reference),
+        ])
         return .ok(content, warning: warning)
+    }
+
+    /// SEC-M8 (v1.7): anotación de frescura no bloqueante. Devuelve
+    /// "stale: N days since last review" si la nota caducó (frontmatter
+    /// `review_after`/`ttl`), o `nil`. Nunca altera el contenido (read-only).
+    static func stalenessWarning(content: String, reference: Date, now: Date = Date()) -> String? {
+        let frontmatter = FrontmatterParser.parse(content).frontmatter
+        if case .expired(let days) = Freshness.state(frontmatter: frontmatter, reference: reference, now: now) {
+            return "stale: \(days) days since last review"
+        }
+        return nil
+    }
+
+    /// Une avisos no nulos con el separador ' | ' (mismo estilo que combinedWarning).
+    static func joinWarnings(_ parts: [String?]) -> String? {
+        let present = parts.compactMap { $0 }
+        return present.isEmpty ? nil : present.joined(separator: " | ")
     }
 
     /// SEC-M5: tamaño en disco (bytes) de un fichero, o `nil` si no se puede leer.
@@ -294,6 +316,8 @@ public enum MCPTools {
         /// Para SEC-M8: (fileName, content) de cada entry, para el escaneo de secretos.
         var scanned: [(name: String, content: String)]
         var missing: [String]
+        /// v1.7: ficheros caducados, ya formateados "file.md (120d)".
+        var stale: [String] = []
     }
 
     /// HU-7: lista de ficheros por nombre. Cada uno pasa el gate de ruta
@@ -303,6 +327,7 @@ public enum MCPTools {
         var entries: [ContextBuilder.FileEntry] = []
         var scanned: [(name: String, content: String)] = []
         var missing: [String] = []
+        var stale: [String] = []
 
         for name in names {
             switch MCPPathResolver.resolve(relativePath: name, vaultRoot: config.vaultRoot) {
@@ -324,9 +349,21 @@ public enum MCPTools {
                 let entryName = url.deletingPathExtension().lastPathComponent
                 entries.append(ContextBuilder.FileEntry(name: entryName, content: content))
                 scanned.append((name: url.lastPathComponent, content: content))
+                if let staleLabel = staleLabel(content: content, url: url) { stale.append(staleLabel) }
             }
         }
-        return FeedSelection(entries: entries, scanned: scanned, missing: missing)
+        return FeedSelection(entries: entries, scanned: scanned, missing: missing, stale: stale)
+    }
+
+    /// v1.7: etiqueta "file.md (Nd)" si la nota caducó, o `nil`. Referencia = fecha
+    /// de modificación del fichero (fallback de `Freshness`).
+    static func staleLabel(content: String, url: URL) -> String? {
+        let reference = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+        let frontmatter = FrontmatterParser.parse(content).frontmatter
+        if case .expired(let days) = Freshness.state(frontmatter: frontmatter, reference: reference, now: Date()) {
+            return "\(url.lastPathComponent) (\(days)d)"
+        }
+        return nil
     }
 
     /// HU-6: colección. Devuelve `nil` si no es un subdirectorio real. Symlinks
@@ -338,12 +375,17 @@ public enum MCPTools {
         }
         var entries: [ContextBuilder.FileEntry] = []
         var scanned: [(name: String, content: String)] = []
+        var stale: [String] = []
         for file in FileLibrary.mdFiles(in: dir) {
             // FileEntry.name SIN extensión (MDFile.name ya viene sin ".md").
             entries.append(ContextBuilder.FileEntry(name: file.name, content: file.content))
             scanned.append((name: file.url.lastPathComponent, content: file.content))
+            // MDFile ya trae frontmatter y modifiedDate: reusamos freshness().
+            if case .expired(let days) = file.freshness(now: Date()) {
+                stale.append("\(file.url.lastPathComponent) (\(days)d)")
+            }
         }
-        return FeedSelection(entries: entries, scanned: scanned, missing: [])
+        return FeedSelection(entries: entries, scanned: scanned, missing: [], stale: stale)
     }
 
     /// SEC-M8 + HU-7: combina el aviso de secretos (familia + fichero, sin valor)
@@ -359,6 +401,9 @@ public enum MCPTools {
         }
         if !selection.missing.isEmpty {
             parts.append("files not found (omitted): " + selection.missing.joined(separator: ", "))
+        }
+        if !selection.stale.isEmpty {
+            parts.append("stale since last review: " + selection.stale.joined(separator: ", "))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " | ")
     }

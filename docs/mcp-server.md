@@ -474,6 +474,25 @@ the same `warning` string, separated by ` | `.
 
 ---
 
+## Staleness warnings
+
+Since 1.6.0, if a note declares an expiry in its frontmatter (`review_after: <ISO date>` or
+`ttl: <days>`, optionally with `last_reviewed: <ISO date>`), `read_file` and `feed_context` add a
+freshness note to the same non-blocking `warning` channel so a consuming agent knows how much to
+trust the context:
+
+- `read_file` → `stale: N days since last review`
+- `feed_context` → `stale since last review: fileA.md (120d), fileB.md (45d)`
+
+Content is delivered unchanged; the annotation never alters the payload and never appears as an
+`isError`. A note with no expiry declared produces no staleness warning. Writing `last_reviewed`
+happens only in the Pasture GUI (the review queue) — the MCP server remains strictly read-only.
+
+Staleness, secret, and missing-file warnings coexist in the same `warning` string, separated
+by ` | `.
+
+---
+
 ## Environment variables
 
 | Variable | Values | Default | Description |

@@ -14,14 +14,19 @@ struct SidebarView: View {
     @State private var collectionPendingDeletion: String?
     @State private var filePendingRename: MDFile?
     @State private var collectionPendingRename: String?
+    @State private var showReviewQueue = false
 
     var body: some View {
         VStack(spacing: 0) {
             searchBar
             Color.pastureDivider(colorScheme).frame(height: 1)
+            reviewBanner
             fileList
             Color.pastureDivider(colorScheme).frame(height: 1)
             selectionSummary
+        }
+        .sheet(isPresented: $showReviewQueue) {
+            ReviewQueueSheet(fm: fm)
         }
         .background(Color.pastureSidebar(colorScheme))
         .alert("Delete collection?",
@@ -49,6 +54,35 @@ struct SidebarView: View {
                     fm.renameCollection(name, to: newName)
                 }
             }
+        }
+    }
+
+    /// v1.7: banner de la cola de revisión — visible solo si hay notas caducadas.
+    @ViewBuilder
+    private var reviewBanner: some View {
+        let stale = fm.staleFiles()
+        if !stale.isEmpty {
+            Button {
+                showReviewQueue = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .foregroundStyle(Color.pastureAmber)
+                    Text("\(stale.count) note\(stale.count == 1 ? "" : "s") need review")
+                        .font(.pastureStatusBar)
+                        .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                }
+                .padding(.horizontal, PastureLayout.searchBarHPadding)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Review queue, \(stale.count) notes need review")
+            Color.pastureDivider(colorScheme).frame(height: 1)
         }
     }
 

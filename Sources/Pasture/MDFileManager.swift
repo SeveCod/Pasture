@@ -147,6 +147,23 @@ final class MDFileManager: ObservableObject {
         }
     }
 
+    /// v1.7: marca una nota como revisada hoy — escribe `last_reviewed: <hoy>` en
+    /// su frontmatter (transformación pura de `FrontmatterWriter`) y persiste. El
+    /// `DirectoryWatcher` recargará; `save` ya actualiza el estado en memoria.
+    func markReviewed(_ file: MDFile) {
+        var updated = file
+        updated.content = FrontmatterWriter.settingLastReviewed(in: file.content, to: Date())
+        save(file: updated)
+    }
+
+    /// v1.7: notas caducadas según su frontmatter, para la cola de revisión.
+    func staleFiles(now: Date = Date()) -> [MDFile] {
+        files.filter {
+            if case .expired = $0.freshness(now: now) { return true }
+            return false
+        }
+    }
+
     func create(name: String, content: String, collection: String? = nil) -> MDFile? {
         let cleanName = FilenameSanitizer.sanitize(name)
         guard !cleanName.isEmpty else {
