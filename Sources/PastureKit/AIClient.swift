@@ -52,15 +52,29 @@ public actor AIClient {
         }
     }
 
+    /// Single-turn convenience — wraps the question+context into one `.user`
+    /// message and delegates to the multi-turn stream. Kept for the Settings
+    /// "test connection" path.
     public func ask(
         question: String,
         context: String,
         model: AIModel,
         apiKey: String
     ) -> AsyncThrowingStream<String, Error> {
+        let content = context.isEmpty ? question : "\(context)\n\n\(question)"
+        return ask(messages: [ChatMessage(role: .user, content: content)], model: model, apiKey: apiKey)
+    }
+
+    /// Streams a completion for a full conversation transcript. The first `.user`
+    /// message must already carry the file context; history follows in order.
+    public func ask(
+        messages: [ChatMessage],
+        model: AIModel,
+        apiKey: String
+    ) -> AsyncThrowingStream<String, Error> {
         let request: URLRequest
         do {
-            request = try Self.buildRequest(question: question, context: context, model: model, apiKey: apiKey)
+            request = try Self.buildRequest(messages: messages, model: model, apiKey: apiKey)
         } catch {
             return AsyncThrowingStream { $0.finish(throwing: error) }
         }
@@ -168,7 +182,11 @@ public actor AIClient {
 
     /// Single builder for both providers — the JSON body is identical; only the
     /// endpoint URL and auth headers differ per provider.
-    static func buildRequest(question: String, context: String, model: AIModel, apiKey: String) throws -> URLRequest {
+    ///
+    /// Multi-turn: the transcript is sent verbatim. The first `.user` message
+    /// already carries the file context (embedded by the caller); this builder
+    /// never injects context itself, so context appears exactly once (AC#1–3).
+    static func buildRequest(messages: [ChatMessage], model: AIModel, apiKey: String) throws -> URLRequest {
         var request: URLRequest
         switch model.provider {
         case .anthropic:
@@ -183,17 +201,23 @@ public actor AIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
 
-        let userContent = context.isEmpty ? question : "\(context)\n\n\(question)"
+        let wireMessages = messages.map { ["role": $0.role.rawValue, "content": $0.content] }
         let body: [String: Any] = [
             "model": model.id,
             "max_tokens": model.maxOutputTokens,
             "stream": true,
-            "messages": [
-                ["role": "user", "content": userContent]
-            ]
+            "messages": wireMessages
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
+    }
+
+    /// Single-turn convenience: embeds the context into one `.user` message and
+    /// delegates to the multi-turn builder. Used by the Settings "test connection"
+    /// path (no history).
+    static func buildRequest(question: String, context: String, model: AIModel, apiKey: String) throws -> URLRequest {
+        let content = context.isEmpty ? question : "\(context)\n\n\(question)"
+        return try buildRequest(messages: [ChatMessage(role: .user, content: content)], model: model, apiKey: apiKey)
     }
 
     // MARK: - Retry logic

@@ -118,22 +118,18 @@ struct AskView: View {
 
     @ViewBuilder
     private var responseArea: some View {
-        if viewModel.responseText.isEmpty && !viewModel.isStreaming && viewModel.error == nil {
+        if !viewModel.hasConversation && viewModel.error == nil {
             askEmptyState
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(viewModel.conversation.messages) { message in
+                            messageView(message)
+                        }
+
                         if let error = viewModel.error {
                             errorView(error)
-                        }
-
-                        if !viewModel.responseText.isEmpty {
-                            responseContent
-                        }
-
-                        if viewModel.isStreaming {
-                            streamingIndicator
                         }
 
                         Color.clear.frame(height: 1).id("bottom")
@@ -141,7 +137,7 @@ struct AskView: View {
                     .padding(PastureLayout.askResponsePadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .onChange(of: viewModel.responseText) { _, _ in
+                .onChange(of: viewModel.conversation) { _, _ in
                     withAnimation(.easeOut(duration: PastureEffects.animationQuick)) {
                         proxy.scrollTo("bottom")
                     }
@@ -149,28 +145,59 @@ struct AskView: View {
             }
             .frame(maxHeight: .infinity)
 
-            if !viewModel.responseText.isEmpty && !viewModel.isStreaming {
+            if viewModel.hasConversation && !viewModel.isStreaming {
                 Color.pastureDivider(colorScheme).frame(height: 1)
                 actionBar
             }
         }
     }
 
-    private var responseContent: some View {
-        Group {
-            if !viewModel.isStreaming,
+    /// One turn: a role label plus the message body.
+    private func messageView(_ message: ChatMessage) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(message.role == .user ? "You" : "Assistant")
+                .font(.pastureStatusBar)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                .accessibilityLabel(message.role == .user ? "Your question" : "Assistant answer")
+
+            messageBody(message)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func messageBody(_ message: ChatMessage) -> some View {
+        let isLive = message.role == .assistant
+            && !message.isComplete
+            && viewModel.isStreaming
+            && message.id == viewModel.conversation.messages.last?.id
+
+        VStack(alignment: .leading, spacing: 6) {
+            if message.role == .assistant, message.isComplete,
                let attributed = try? AttributedString(
-                   markdown: viewModel.responseText,
+                   markdown: message.content,
                    options: .init(interpretedSyntax: .full)
                ) {
                 Text(attributed)
-            } else {
-                Text(viewModel.responseText)
+                    .textSelection(.enabled)
+                    .font(.body)
+                    .foregroundStyle(Color.pastureTextPrimary(colorScheme))
+            } else if !message.content.isEmpty {
+                Text(message.content)
+                    .textSelection(.enabled)
+                    .font(.body)
+                    .foregroundStyle(Color.pastureTextPrimary(colorScheme))
+            }
+
+            if isLive {
+                streamingIndicator
+            } else if message.role == .assistant && !message.isComplete {
+                Label("Incomplete answer", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color.pastureWarning(colorScheme))
+                    .accessibilityLabel("This answer was cut short")
             }
         }
-        .textSelection(.enabled)
-        .font(.body)
-        .foregroundStyle(Color.pastureTextPrimary(colorScheme))
     }
 
     private var streamingIndicator: some View {
@@ -234,46 +261,46 @@ struct AskView: View {
 
     private var actionBar: some View {
         HStack(spacing: 12) {
-            Text("~\(TokenEstimator.formatted(TokenEstimator.estimate(viewModel.responseText))) tokens response")
+            Text("~\(TokenEstimator.formatted(TokenEstimator.estimate(viewModel.distilledConversation))) tokens")
                 .font(.pastureTokenCount)
                 .foregroundStyle(Color.pastureTextTertiary(colorScheme))
 
             Spacer()
 
             Button {
-                viewModel.copyResponse()
-                feedService.showFeedback("Copied to clipboard")
+                viewModel.copyConversation()
+                feedService.showFeedback("Copied conversation")
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
                     .font(.pastureStatusBar)
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.pastureAccent(colorScheme))
-            .accessibilityLabel("Copy response")
-            .accessibilityHint("Copies the AI response to the clipboard")
+            .accessibilityLabel("Copy conversation")
+            .accessibilityHint("Copies the whole conversation to the clipboard as Markdown")
 
             Button {
-                viewModel.saveResponse(to: fm, collection: feedTargets.first?.collection)
+                viewModel.saveAsContext(to: fm, collection: feedTargets.first?.collection)
                 feedService.showFeedback("Saved to Pasture")
             } label: {
-                Label("Save", systemImage: "square.and.arrow.down")
+                Label("Save as context", systemImage: "square.and.arrow.down")
                     .font(.pastureStatusBar)
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.pastureAccent(colorScheme))
-            .accessibilityLabel("Save response to Pasture")
-            .accessibilityHint("Saves the AI response as a new file in Pasture")
+            .accessibilityLabel("Save conversation as a context note")
+            .accessibilityHint("Distills the conversation into a new Markdown file in Pasture")
 
             Button {
-                exportResponseToDisk()
+                exportConversationToDisk()
             } label: {
                 Label("Export .md", systemImage: "square.and.arrow.up")
                     .font(.pastureStatusBar)
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.pastureAccent(colorScheme))
-            .accessibilityLabel("Export response as Markdown")
-            .accessibilityHint("Opens a save dialog to export the response as a Markdown file")
+            .accessibilityLabel("Export conversation as Markdown")
+            .accessibilityHint("Opens a save dialog to export the conversation as a Markdown file")
         }
         .padding(.horizontal, PastureLayout.statusBarHPadding)
         .frame(height: PastureLayout.askActionBarHeight)
@@ -308,7 +335,7 @@ struct AskView: View {
                 .accessibilityLabel("Recent questions")
             }
 
-            TextField("Ask about your files\u{2026}", text: $viewModel.question, axis: .vertical)
+            TextField(viewModel.hasConversation ? "Ask a follow-up\u{2026}" : "Ask about your files\u{2026}", text: $viewModel.question, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .lineLimit(1...4)
@@ -350,7 +377,7 @@ struct AskView: View {
                 .help(feedTargets.isEmpty ? "Select files first" : (viewModel.hasAPIKey ? "Send question" : "Configure API key in Settings"))
             }
 
-            if !viewModel.responseText.isEmpty || viewModel.error != nil {
+            if viewModel.hasConversation || viewModel.error != nil {
                 Button(action: viewModel.clear) {
                     Image(systemName: "arrow.counterclockwise")
                         .font(.system(size: 12))
@@ -393,16 +420,17 @@ struct AskView: View {
         }
     }
 
-    private func exportResponseToDisk() {
-        guard !viewModel.responseText.isEmpty else { return }
+    private func exportConversationToDisk() {
+        guard viewModel.hasConversation else { return }
         let panel = NSSavePanel()
-        let prefix = FilenameSanitizer.sanitize(String(viewModel.question.prefix(AskViewModel.responseFilenamePrefixLength)))
-        panel.nameFieldStringValue = (prefix.isEmpty ? "response" : prefix) + ".md"
+        let firstQuestion = viewModel.conversation.messages.first?.content ?? ""
+        let prefix = FilenameSanitizer.sanitize(String(firstQuestion.prefix(AskViewModel.responseFilenamePrefixLength)))
+        panel.nameFieldStringValue = (prefix.isEmpty ? "conversation" : prefix) + ".md"
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText, .plainText]
-        panel.message = "Export response as Markdown"
+        panel.message = "Export conversation as Markdown"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try viewModel.responseText.write(to: url, atomically: true, encoding: .utf8)
+            try viewModel.distilledConversation.write(to: url, atomically: true, encoding: .utf8)
             feedService.showFeedback("Exported to \(url.lastPathComponent)")
         } catch {
             feedService.showFeedback("Export failed: \(error.localizedDescription)", isError: true)

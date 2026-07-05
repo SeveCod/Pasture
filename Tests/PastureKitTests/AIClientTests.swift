@@ -88,6 +88,44 @@ private let openRouterModel = AIModel(
     }
 }
 
+// MARK: - Multi-turn Request Building
+
+@Suite struct AIClientMultiTurnRequestTests {
+
+    @Test func mapsMessagesInOrderWithRoles() throws {
+        let messages = [
+            ChatMessage(role: .user, content: "ctx\n\nq1"),
+            ChatMessage(role: .assistant, content: "a1"),
+            ChatMessage(role: .user, content: "q2"),
+        ]
+        let req = try AIClient.buildRequest(messages: messages, model: anthropicModel, apiKey: "key")
+        let body = try #require(req.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let msgs = try #require(json["messages"] as? [[String: String]])
+        #expect(msgs.count == 3)
+        #expect(msgs[0]["role"] == "user")
+        #expect(msgs[0]["content"] == "ctx\n\nq1")
+        #expect(msgs[1]["role"] == "assistant")
+        #expect(msgs[1]["content"] == "a1")
+        #expect(msgs[2]["role"] == "user")
+        #expect(msgs[2]["content"] == "q2")
+    }
+
+    @Test func multiTurnPreservesModelAndStreamFlags() throws {
+        let req = try AIClient.buildRequest(
+            messages: [ChatMessage(role: .user, content: "hi")],
+            model: openRouterModel, apiKey: "key"
+        )
+        let body = try #require(req.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["model"] as? String == "anthropic/claude-test")
+        #expect(json["stream"] as? Bool == true)
+        #expect(json["max_tokens"] as? Int == openRouterModel.maxOutputTokens)
+        #expect(req.url == URL(string: "https://openrouter.ai/api/v1/chat/completions")!)
+        #expect(req.value(forHTTPHeaderField: "Authorization") == "Bearer key")
+    }
+}
+
 // MARK: - Extract Delta
 
 @Suite struct AIClientExtractDeltaTests {

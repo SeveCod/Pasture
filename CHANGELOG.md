@@ -5,6 +5,18 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-07-05
+
+### Added
+
+- **Ask is now a multi-turn conversation** (Fase 1 of "Ask de verdad"). The Ask panel keeps the full transcript instead of a single answer: each question and answer is shown as its own turn, and follow-ups carry the whole history. The file context is embedded into the first user message only and re-sent on every turn (a request is stateless); it never appears more than once in the payload. Before each send the transcript is trimmed by the pure `ConversationTruncator` to fit `floor(0.95 × contextWindow) − maxOutputTokens`, dropping the oldest middle turns but **never** the file context (first message) or the current question (last message). A turn stopped mid-stream — or one whose stream ended before the provider's end event — is kept as an **incomplete answer** (flagged in the UI and when saved) so it still travels back as history.
+- **"Save as context"**: the action bar distills the whole conversation into a new Markdown note in the vault (`## Question` / `## Answer` sections, incomplete answers flagged) — the vault→chat→vault flywheel. Copy and Export .md now act on the full conversation.
+- New pure, testable PastureKit types: `ChatMessage` (role/content/`isComplete`), `AskConversation` (the transcript state machine), `ConversationTruncator`, and `ConversationComposer` (`wire` embeds context into the first user message; `distill` renders the transcript to Markdown). `AIClient.ask(messages:)`/`buildRequest(messages:)` send a full transcript; the previous single-turn `ask(question:context:)` is kept as a thin wrapper for the Settings "test connection" path.
+
+### Changed
+
+- Test count: 607 → 632 (new `ConversationTruncatorTests`, `ConversationComposerWireTests`, `ConversationDistillerTests`, `AskConversationTests`, and multi-turn cases in `AIClientTests`).
+
 ## [1.6.0] - 2026-07-05
 
 ### Added
