@@ -10,6 +10,7 @@ struct MenuBarView: View {
     @State private var searchText = ""
     @State private var exportDestinations: [ExportDestination] = ExportSettings.loadDestinations()
     @State private var presets: [SelectionPreset] = SelectionPresetStore.load()
+    @State private var hasPacks: Bool = !PackStore.load().isEmpty
     @StateObject private var feedService = FeedService()
 
     // Search is intentionally independent from the main window's, but the
@@ -53,6 +54,9 @@ struct MenuBarView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: SelectionPresetStore.didChangeNotification)) { _ in
             presets = SelectionPresetStore.load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: PackStore.didChangeNotification)) { _ in
+            hasPacks = !PackStore.load().isEmpty
         }
         .alert(
             "Possible secret detected",
@@ -107,6 +111,19 @@ struct MenuBarView: View {
                 .help("Apply a selection preset")
                 .accessibilityLabel("Apply selection preset")
                 .accessibilityHint("Opens a menu of saved presets")
+            }
+
+            if hasPacks {
+                Button {
+                    syncAllPacks()
+                } label: {
+                    Image(systemName: "shippingbox")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.pastureAccent(colorScheme))
+                }
+                .buttonStyle(.plain)
+                .help("Sync all Context Compiler packs")
+                .accessibilityLabel("Sync all packs")
             }
 
             Button {
@@ -221,6 +238,16 @@ struct MenuBarView: View {
 
     private func executeFeed(destination: ExportDestination?) {
         feedService.executeFeed(targets: feedTargets, destination: destination, fm: fm)
+    }
+
+    /// Context Compiler (v1.6): sincroniza todos los packs con defaults seguros
+    /// (nunca sobrescribe conflictos ni escribe secretos sin confirmación) y muestra
+    /// el resumen como toast.
+    private func syncAllPacks() {
+        Task {
+            let summary = await PackSyncRunner.syncAll()
+            feedService.showFeedback(summary)
+        }
     }
 
     /// Aplica un preset a la selección del menu bar (independiente de la ventana

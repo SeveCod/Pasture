@@ -24,6 +24,13 @@ struct PastureApp: App {
                     NotificationCenter.default.post(name: .pasteFromClipboard, object: nil)
                 }
                 .keyboardShortcut("v", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Sync All Packs") {
+                    NotificationCenter.default.post(name: .syncAllPacks, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
             }
             CommandMenu("View") {
                 Button("Toggle Ask Mode") {
@@ -49,4 +56,5 @@ extension Notification.Name {
     static let pasteFromClipboard = Notification.Name("pasteFromClipboard")
     static let openInEditor = Notification.Name("openInEditor")
     static let toggleAskMode = Notification.Name("toggleAskMode")
+    static let syncAllPacks = Notification.Name("syncAllPacks")
 }

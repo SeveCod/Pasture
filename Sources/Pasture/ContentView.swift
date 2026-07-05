@@ -60,6 +60,12 @@ struct ContentView: View {
                 detailMode = detailMode == .preview ? .ask : .preview
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .syncAllPacks)) { _ in
+            Task {
+                let summary = await PackSyncRunner.syncAll()
+                feedService.showFeedback(summary)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: ExportSettings.didChangeNotification)) { _ in
             exportDestinations = ExportSettings.loadDestinations()
         }
