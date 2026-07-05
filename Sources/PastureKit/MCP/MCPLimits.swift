@@ -22,6 +22,13 @@ public enum MCPLimits {
     public static let maxQueryLength = 1_000
 
     /// SEC-M5: tamaño máximo de la respuesta ensamblada de `read_file`/`feed_context`.
-    /// Por encima → `isError`, sin serializar el gigante.
+    /// Por encima → `isError`, sin serializar el gigante. También acota el texto
+    /// renderizado de `prompts/get` y el contenido de `resources/read`.
     public static let maxResponseBytes = 25_000_000   // 25 MB
+
+    /// SEC-M13: longitud máxima (caracteres) de un valor de argumento de
+    /// `prompts/get` controlado por el cliente, antes de entrar al render. Un
+    /// prompt legítimo pasa valores de KB; 100.000 chars es holgura amplia y
+    /// corta un argumento patológico antes de que el render lo multiplique.
+    public static let maxPromptArgumentLength = 100_000
 }

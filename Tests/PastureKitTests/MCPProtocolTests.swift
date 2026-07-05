@@ -90,4 +90,21 @@ import Foundation
         let zebraPos = line.range(of: "zebra")!.lowerBound
         #expect(alphaPos < zebraPos)
     }
+
+    // MARK: — AC#1: initialize declara las 3 capabilities (v1.6)
+
+    /// Las tres claves (`tools`, `resources`, `prompts`) DEBEN estar presentes
+    /// aunque vacías (`{}`), nunca ausentes — como ya exigía `tools` (gotcha 3).
+    @Test func initializeDeclaresThreeCapabilities() throws {
+        let line = try InitializeResult().mcpLine()
+        let json = try JSONDecoder().decode(JSONValue.self, from: Data(line.utf8))
+        let capabilities = try #require(json.object?["capabilities"]?.object)
+        #expect(capabilities["tools"] != nil)
+        #expect(capabilities["resources"] != nil)
+        #expect(capabilities["prompts"] != nil)
+        // Cada una serializa como objeto vacío, no como null ni ausente.
+        #expect(capabilities["tools"]?.object != nil)
+        #expect(capabilities["resources"]?.object != nil)
+        #expect(capabilities["prompts"]?.object != nil)
+    }
 }

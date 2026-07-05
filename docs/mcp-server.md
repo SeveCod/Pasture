@@ -15,10 +15,12 @@ external dependencies, and is a pure Swift executable built from the same packag
    - [read_file](#read_file)
    - [search](#search)
    - [feed_context](#feed_context)
-3. [Limits](#limits)
-4. [Secret warnings](#secret-warnings)
-5. [Environment variables](#environment-variables)
-6. [Troubleshooting](#troubleshooting)
+3. [Resources](#resources)
+4. [Prompts](#prompts)
+5. [Limits](#limits)
+6. [Secret warnings](#secret-warnings)
+7. [Environment variables](#environment-variables)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -369,6 +371,62 @@ Missing or inaccessible files in a `files` list are omitted from the output and 
 
 ---
 
+## Resources
+
+Since 1.6.0, `pasture-mcp` also implements the MCP `resources` primitive. Every `.md` file in the
+vault is exposed as a native resource, so clients that support resources (e.g. Claude Desktop) can
+attach a vault note by @-mention instead of asking the model to call `read_file`.
+
+- **`resources/list`** — returns one descriptor per vault file (root + one-level collections),
+  `{ uri, name, mimeType }`. `uri` is `pasture:///<relative-path>`, `name` is the relative path,
+  `mimeType` is always `text/markdown`. Hidden files and symlinks are filtered out (same
+  `FileLibrary` path as `list_files`).
+- **`resources/read`** — takes `{ uri }` and returns `{ contents: [{ uri, mimeType, text }] }`.
+  Content is delivered **raw** (not template-rendered — that is what `prompts/get` is for).
+
+Only the `pasture://` URI scheme is accepted. Absolute paths and foreign schemes (`file://`,
+`https://`) are rejected. The relative path is resolved through both `MCPPathResolver` layers
+(`..` traversal + `resolvingSymlinksInPath()`) before any I/O, and the 25 MB response cap applies
+with an on-disk size pre-check.
+
+Unlike a tool, `resources/read` has no `isError` channel: a failure (unknown scheme, path outside
+the vault, missing file, oversized file) is a JSON-RPC **protocol error** (`code: -32602`).
+
+> **Compatibility note (verify before relying on it):** MCP client support for `resources` and
+> `prompts` is uneven across versions. Confirm in your Claude Code / Claude Desktop build that
+> resources are attachable and prompts appear as slash-commands. Resource read/warning asymmetry:
+> `resources/read` does **not** emit a secret warning (the standard result has no channel for it);
+> use the on-demand **"Scan vault for secrets"** button in Settings → MCP for that coverage.
+
+## Prompts
+
+Also since 1.6.0, every vault file that is a **template** (contains `{{VAR}}` or a block such as
+`{{#if}}`/`{{#each}}`) is exposed as a parameterized MCP prompt. In Claude Code these appear as
+slash-commands with typed arguments; the client asks you for exactly the values the template needs.
+
+- **`prompts/list`** — returns one descriptor per template, `{ name, description, arguments }`.
+  The prompt `name` is the relative path without `.md`, with `/` replaced by `__`
+  (e.g. `proyecto/spec.md` → `proyecto__spec`). If two paths collide on the same name, the second
+  is dropped and logged to stderr. Each argument is `{ name, description, required }`:
+  - a variable **without** a default is `required: true`;
+  - a variable **with** a default (`{{TONO=formal}}`) is `required: false`, and the default is
+    cited in its `description`;
+  - an `#each` variable is `required: true` with a description documenting the comma-separated
+    convention.
+- **`prompts/get`** — takes `{ name, arguments }` and returns
+  `{ description?, messages: [{ role: "user", content: { type: "text", text } }] }`. Rendering is
+  **single-pass**: an argument value that itself contains `{{...}}` is emitted literally, never
+  re-interpreted as template syntax. An omitted or empty optional argument falls back to its
+  default; a **missing required argument** is a protocol error (`code: -32602`), as is an unknown
+  prompt name or an argument over `maxPromptArgumentLength` (100 000 chars).
+
+The rendered content is scanned by `SecretScanner` (post-substitution). If a secret is detected,
+its **masked** summary (family + file, never the value) is placed in the result's `description`
+field; the content is still delivered unchanged (informational, non-blocking — same policy as
+`read_file`).
+
+---
+
 ## Limits
 
 | Limit | Value | Purpose |
@@ -377,7 +435,8 @@ Missing or inaccessible files in a `files` list are omitted from the output and 
 | Max query length (`search`) | 1,000 characters | Bounds search cost |
 | Max search results | 100 files | Bounds response size |
 | Max content read per file in `search` | 2 MB | Matches `SecretScanner.maxScanBytes`; truncated at a valid UTF-8 boundary |
-| Max response payload (`read_file`, `feed_context`) | 25 MB | Prevents serializing giant payloads |
+| Max response payload (`read_file`, `feed_context`, `resources/read`, `prompts/get`) | 25 MB | Prevents serializing giant payloads |
+| Max prompt argument length (`prompts/get`) | 100,000 characters | Bounds a client-controlled argument before rendering |
 
 Lines over the input cap are discarded silently (from the client's perspective) and logged to
 stderr. The connection is not dropped.

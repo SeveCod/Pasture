@@ -4,7 +4,7 @@ import Foundation
 public enum MCPProtocol {
     public static let version = "2025-06-18"
     public static let serverName = "pasture-mcp"
-    public static let serverVersion = "1.5.0"
+    public static let serverVersion = "1.6.0"
 
     // Códigos JSON-RPC para errores de PROTOCOLO (no de tool — D6 / ADR-006).
     public static let parseError = -32700
@@ -13,11 +13,36 @@ public enum MCPProtocol {
     public static let invalidParams = -32602
 }
 
-/// Respuesta de `initialize`. `capabilities.tools` DEBE estar presente aunque
-/// vacío (gotcha 3): se serializa como `{}`, nunca ausente.
+/// Error de PROTOCOLO devuelto por un handler que no puede degradar a `isError`
+/// de tool. `resources/read` y `prompts/get` no son tools (no tienen canal
+/// `isError`): sus fallos son errores JSON-RPC de nivel superior. El handler
+/// devuelve `Result<_, MCPRequestError>` y el dispatcher lo traduce a una línea
+/// de error, preservando SEC-M12 (nunca lanza hacia el caller).
+public struct MCPRequestError: Error, Equatable, Sendable {
+    public let code: Int
+    public let message: String
+
+    public init(code: Int, message: String) {
+        self.code = code
+        self.message = message
+    }
+
+    /// `-32602` (invalidParams): uri fuera del vault, argumento required ausente,
+    /// prompt inexistente, etc.
+    public static func invalidParams(_ message: String) -> MCPRequestError {
+        MCPRequestError(code: MCPProtocol.invalidParams, message: message)
+    }
+}
+
+/// Respuesta de `initialize`. Las tres capabilities (`tools`, `resources`,
+/// `prompts`) DEBEN estar presentes aunque vacías (gotcha 3): se serializan como
+/// `{}`, nunca ausentes. Declarar `resources`/`prompts` es lo que hace que el
+/// cliente ofrezca `resources/list` y `prompts/list` en el handshake.
 public struct InitializeResult: Encodable {
     public struct Capabilities: Encodable {
         public let tools: [String: JSONValue]
+        public let resources: [String: JSONValue]
+        public let prompts: [String: JSONValue]
     }
     public struct ServerInfo: Encodable {
         public let name: String
@@ -29,7 +54,7 @@ public struct InitializeResult: Encodable {
 
     public init() {
         self.protocolVersion = MCPProtocol.version
-        self.capabilities = Capabilities(tools: [:])
+        self.capabilities = Capabilities(tools: [:], resources: [:], prompts: [:])
         self.serverInfo = ServerInfo(
             name: MCPProtocol.serverName,
             version: MCPProtocol.serverVersion)

@@ -5,6 +5,26 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-07-05
+
+### Added
+
+- **MCP `resources` primitive**: every `.md` in the vault is now exposed as a native MCP resource (`resources/list` + `resources/read`), addressable by `pasture:///<relative-path>` URIs with `mimeType: text/markdown`. Clients that support resources (e.g. Claude Desktop) can attach vault notes by @-mention instead of asking the model to call `read_file`. Read-only: enumeration goes through the same `FileLibrary` path that filters hidden files and symlinks, and every read passes both `MCPPathResolver` layers (`..` traversal + symlink resolution) before any I/O.
+- **MCP `prompts` primitive**: every vault file that is a template (contains `{{VAR}}` or blocks) is exposed as a parameterized MCP prompt (`prompts/list` + `prompts/get`). In Claude Code these appear as slash-commands with typed arguments derived from `TemplateEngine.extractVariables` — required when the variable has no default, optional (with the default cited) otherwise, and `#each` variables documented as comma-separated lists. `prompts/get` renders single-pass (an argument value is never re-parsed as template syntax) and returns a single `user` message.
+- **`initialize` now declares three capabilities** (`tools`, `resources`, `prompts`), each always present as `{}` per the MCP spec.
+- `MCPLimits.maxPromptArgumentLength` (100 000 chars): per-argument cap on `prompts/get` values before rendering (SEC-M13).
+
+### Changed
+
+- `MCPProtocol.serverVersion`: `1.5.0` → `1.6.0`.
+- Test count: 501 → 526 (new suites `MCPResourcesTests`, `MCPPromptsTests`; extended `MCPProtocolTests`, `MCPEndToEndTests`).
+
+### Security
+
+- **`resources/read`** inherits the 25 MB response cap with an on-disk size pre-check, so an oversized file is rejected without being materialized in RAM (SEC-M5). Only the `pasture://` URI scheme is accepted; absolute paths and foreign schemes (`file://`, `https://`) are rejected before any I/O (SEC-M1).
+- **`prompts/get`** scans the *rendered* content with `SecretScanner` (post-substitution, ADR-QW-002); a detected secret surfaces as a masked summary in the result's `description` field (family + file, never the value — SEC-M8/D4) while the content is delivered unchanged.
+- The server remains strictly read-only (SEC-M11): all four new routes render or read in memory, with no write path to `~/.pasture/`. Failures in `resources/read` and `prompts/get` are JSON-RPC protocol errors (`-32602`), distinct from the tool-level `isError` channel (SEC-M12).
+
 ## [1.5.1] - 2026-07-04
 
 ### Added
