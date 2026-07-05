@@ -5,7 +5,9 @@ import PastureKit
 @MainActor
 final class AskViewModel: ObservableObject {
     @Published var question = ""
-    @Published var responseText = ""
+    /// The multi-turn transcript (clean: questions/answers, no file context).
+    /// The live assistant turn is the last message while `isStreaming`.
+    @Published private(set) var conversation = AskConversation()
     @Published var isStreaming = false
     @Published var error: AIClientError?
     @Published private(set) var selectedProvider: AIProviderKind = AISettings.loadProvider()
@@ -29,6 +31,12 @@ final class AskViewModel: ObservableObject {
     var canSend: Bool {
         !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isStreaming && hasAPIKey
     }
+
+    /// True once at least one turn exists — drives the action bar and Clear button.
+    var hasConversation: Bool { !conversation.isEmpty }
+
+    /// The whole conversation rendered as Markdown, for copy / save / export.
+    var distilledConversation: String { ConversationComposer.distill(conversation.messages) }
 
     func inputTokenEstimate(for contextTokens: Int) -> Int {
         TokenEstimator.inputTokenEstimate(contextTokens: contextTokens, question: question)
@@ -54,22 +62,33 @@ final class AskViewModel: ObservableObject {
         }
 
         error = nil
-        responseText = ""
-        isStreaming = true
-
         let q = question
         QuestionHistory.record(q)
         questionHistory = QuestionHistory.load()
+        question = "" // clear the input so the box is ready for the next turn
+
+        conversation.addUserQuestion(q)
+        // Context is re-embedded into the first user message on every send, then
+        // the transcript is truncated to the model budget (AC#1–3).
+        let wire = conversation.requestMessages(context: context, model: model)
+        conversation.beginAssistant()
+        isStreaming = true
 
         streamTask = Task {
             do {
-                let stream = await client.ask(question: q, context: context, model: model, apiKey: apiKey)
+                let stream = await client.ask(messages: wire, model: model, apiKey: apiKey)
                 for try await delta in stream {
-                    responseText += delta
+                    try Task.checkCancellation()
+                    conversation.appendDelta(delta)
                 }
+                conversation.completeAssistant()
+            } catch is CancellationError {
+                conversation.endInterruptedAssistant()
             } catch let clientError as AIClientError {
+                conversation.endInterruptedAssistant()
                 error = clientError
             } catch {
+                conversation.endInterruptedAssistant()
                 self.error = .networkError(underlying: error.localizedDescription)
             }
             isStreaming = false
@@ -84,23 +103,27 @@ final class AskViewModel: ObservableObject {
 
     func clear() {
         stop()
-        responseText = ""
+        conversation.clear()
         error = nil
         question = ""
     }
 
-    func copyResponse() {
-        guard !responseText.isEmpty else { return }
+    /// Copies the whole conversation (as Markdown) to the clipboard.
+    func copyConversation() {
+        guard hasConversation else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(responseText, forType: .string)
+        NSPasteboard.general.setString(distilledConversation, forType: .string)
     }
 
-    func saveResponse(to fm: MDFileManager, collection: String?) {
-        guard !responseText.isEmpty else { return }
-        let prefix = String(question.prefix(Self.responseFilenamePrefixLength))
+    /// Distills the conversation into a new Markdown note in the vault — the
+    /// vault→chat→vault flywheel.
+    func saveAsContext(to fm: MDFileManager, collection: String?) {
+        guard hasConversation else { return }
+        let firstQuestion = conversation.messages.first?.content ?? ""
+        let prefix = String(firstQuestion.prefix(Self.responseFilenamePrefixLength))
         let sanitized = FilenameSanitizer.sanitize(prefix)
-        let name = sanitized.isEmpty ? "ask-response" : "ask-\(sanitized)"
-        _ = fm.create(name: name, content: responseText, collection: collection)
+        let name = sanitized.isEmpty ? "ask-conversation" : "ask-\(sanitized)"
+        _ = fm.create(name: name, content: distilledConversation, collection: collection)
     }
 
     func clearQuestionHistory() {
