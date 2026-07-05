@@ -16,6 +16,13 @@ struct FileRow: View {
                     if file.hasTemplateVars {
                         TemplateBadge(compact: true, colorScheme: colorScheme)
                     }
+                    if case .expired = file.freshness(now: Date()) {
+                        Image(systemName: "clock.badge.exclamationmark")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.pastureAmber)
+                            .help("Stale — past its review date")
+                            .accessibilityLabel("Stale note, past its review date")
+                    }
                 }
                 Text(file.modifiedDate, style: .relative)
                     .font(.pastureFileDate)

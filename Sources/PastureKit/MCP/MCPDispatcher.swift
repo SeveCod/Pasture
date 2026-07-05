@@ -52,6 +52,26 @@ public struct MCPDispatcher: Sendable {
             let result = MCPTools.run(params: request.params, config: config)
             return successLine(id: id, result: result)
 
+        case "resources/list":
+            return successLine(id: id, result: MCPResources.list(config: config))
+
+        case "resources/read":
+            // `resources/read` no es tool: un fallo es error de PROTOCOLO, no
+            // `isError` (SEC-M12). El Result se traduce a línea de error.
+            switch MCPResources.read(params: request.params, config: config) {
+            case .success(let result): return successLine(id: id, result: result)
+            case .failure(let error): return errorLine(id: id, code: error.code, message: error.message)
+            }
+
+        case "prompts/list":
+            return successLine(id: id, result: MCPPrompts.list(config: config))
+
+        case "prompts/get":
+            switch MCPPrompts.get(params: request.params, config: config) {
+            case .success(let result): return successLine(id: id, result: result)
+            case .failure(let error): return errorLine(id: id, code: error.code, message: error.message)
+            }
+
         default:
             return errorLine(
                 id: id,

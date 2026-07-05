@@ -91,6 +91,7 @@ final class MDFileManager: ObservableObject {
         }
         watcher.onChange = { [weak self] in
             self?.loadFiles()
+            self?.autoResyncPacks()
         }
         watcher.watchRoot(Self.pastureDir)
         loadFiles()
@@ -109,6 +110,16 @@ final class MDFileManager: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.apply(result)
         }
+    }
+
+    /// Context Compiler (v1.6): al cambiar el vault, recompila los packs con
+    /// `autoResync` activado. Defaults seguros (`force=false`): un destino en
+    /// conflicto NUNCA se sobrescribe automáticamente (AC#9). Silencioso y
+    /// fire-and-forget — no molesta con toasts si no hay packs opt-in. Pasture
+    /// escribe en repos (fuera del vault), así que no re-dispara el watcher.
+    private func autoResyncPacks() {
+        guard PackStore.load().contains(where: \.autoResync) else { return }
+        Task { _ = await PackSyncRunner.syncAll(autoResyncOnly: true) }
     }
 
     private func apply(_ result: FileLibrary.LoadResult) {
@@ -133,6 +144,23 @@ final class MDFileManager: ObservableObject {
             files[idx].content = file.content
             files[idx].updateDerivedProperties()
             files.sort { $0.modifiedDate > $1.modifiedDate }
+        }
+    }
+
+    /// v1.7: marca una nota como revisada hoy — escribe `last_reviewed: <hoy>` en
+    /// su frontmatter (transformación pura de `FrontmatterWriter`) y persiste. El
+    /// `DirectoryWatcher` recargará; `save` ya actualiza el estado en memoria.
+    func markReviewed(_ file: MDFile) {
+        var updated = file
+        updated.content = FrontmatterWriter.settingLastReviewed(in: file.content, to: Date())
+        save(file: updated)
+    }
+
+    /// v1.7: notas caducadas según su frontmatter, para la cola de revisión.
+    func staleFiles(now: Date = Date()) -> [MDFile] {
+        files.filter {
+            if case .expired = $0.freshness(now: now) { return true }
+            return false
         }
     }
 
