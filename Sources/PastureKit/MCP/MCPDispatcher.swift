@@ -6,8 +6,37 @@ import Foundation
 /// SIN I/O de proceso: el executable la cablea a `FileHandle`. Nunca lanza —
 /// todo fallo se traduce en una línea de error JSON-RPC o en `isError` de tool
 /// (SEC-M12: una request inválida no tumba la conexión).
-public struct MCPDispatcher: Sendable {
+///
+/// Es `final class` (no `struct`) para capturar el `clientInfo` del `initialize`
+/// y grabarlo como procedencia de las propuestas (v1.8). `@unchecked Sendable` es
+/// seguro sin cerrojo porque el executable la consume en un bucle secuencial
+/// single-thread (ADR-MCP-005): una línea entra, se despacha y sale, nunca en
+/// paralelo. `handle(line:)` sigue siendo la frontera testeable.
+public final class MCPDispatcher: @unchecked Sendable {
     private let config: MCPServerConfig
+    /// Procedencia capturada en `initialize` (o `nil` hasta entonces).
+    private var clientInfo: ClientInfo?
+
+    struct ClientInfo: Sendable, Equatable {
+        let name: String
+
+        /// SEC (v1.8): la procedencia acaba en el frontmatter de las notas
+        /// promovidas; un `name` con saltos de línea inyectaría claves (H1). Se
+        /// colapsa a una sola línea y se acota la longitud en el punto de ingest,
+        /// además del escape en `FrontmatterWriter.setting` (defensa en profundidad).
+        static let maxNameLength = 200
+
+        init(name: String) {
+            let collapsed = name
+                .replacingOccurrences(of: "\r\n", with: " ")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+            self.name = String(collapsed.prefix(Self.maxNameLength))
+        }
+    }
+
+    /// Nombre del cliente MCP para la procedencia de las propuestas, o "unknown".
+    var proposedBy: String { clientInfo?.name ?? "unknown" }
 
     public init(config: MCPServerConfig) {
         self.config = config
@@ -40,16 +69,20 @@ public struct MCPDispatcher: Sendable {
         // 3. Despacho por método.
         switch request.method {
         case "initialize":
+            // Captura la procedencia; el proceso es single-thread (ADR-MCP-005).
+            if let name = request.params?.object?["clientInfo"]?.object?["name"]?.stringValue {
+                clientInfo = ClientInfo(name: name)
+            }
             return successLine(id: id, result: InitializeResult())
 
         case "ping":
             return successLine(id: id, result: EmptyResult())
 
         case "tools/list":
-            return successLine(id: id, result: MCPTools.catalog())
+            return successLine(id: id, result: MCPTools.catalog(includingProposals: config.allowProposals))
 
         case "tools/call":
-            let result = MCPTools.run(params: request.params, config: config)
+            let result = MCPTools.run(params: request.params, config: config, proposedBy: proposedBy)
             return successLine(id: id, result: result)
 
         case "resources/list":

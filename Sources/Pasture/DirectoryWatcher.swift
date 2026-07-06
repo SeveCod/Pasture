@@ -23,11 +23,15 @@ private func makeWatchSource(fd: Int32, onEvent: @escaping @Sendable () -> Void)
 @MainActor
 final class DirectoryWatcher {
     var onChange: (() -> Void)?
+    /// v1.8: cambios en el `.inbox/` (llegada/retirada de propuestas del MCP).
+    var onInboxChange: (() -> Void)?
 
     private let debounceInterval: TimeInterval
     nonisolated(unsafe) private var rootSource: (any DispatchSourceFileSystemObject)?
+    nonisolated(unsafe) private var inboxSource: (any DispatchSourceFileSystemObject)?
     nonisolated(unsafe) private var subdirectorySources: [String: any DispatchSourceFileSystemObject] = [:]
     nonisolated(unsafe) private var reloadWorkItem: DispatchWorkItem?
+    nonisolated(unsafe) private var inboxWorkItem: DispatchWorkItem?
 
     init(debounceInterval: TimeInterval = 0.5) {
         self.debounceInterval = debounceInterval
@@ -35,7 +39,9 @@ final class DirectoryWatcher {
 
     deinit {
         reloadWorkItem?.cancel()
+        inboxWorkItem?.cancel()
         rootSource?.cancel()
+        inboxSource?.cancel()
         for source in subdirectorySources.values {
             source.cancel()
         }
@@ -47,6 +53,15 @@ final class DirectoryWatcher {
         let fd = open(url.path, O_EVTONLY)
         guard fd >= 0 else { return }
         rootSource = makeWatchSource(fd: fd, onEvent: eventHandler())
+    }
+
+    /// v1.8: observa el `.inbox/` para refrescar la bandeja de propuestas.
+    /// Idempotente. El directorio debe existir (el caller lo crea al arrancar).
+    func watchInbox(_ url: URL) {
+        guard inboxSource == nil else { return }
+        let fd = open(url.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        inboxSource = makeWatchSource(fd: fd, onEvent: inboxEventHandler())
     }
 
     /// Reconciles subdirectory watchers with the current collection names.
@@ -70,8 +85,12 @@ final class DirectoryWatcher {
     func stop() {
         reloadWorkItem?.cancel()
         reloadWorkItem = nil
+        inboxWorkItem?.cancel()
+        inboxWorkItem = nil
         rootSource?.cancel()
         rootSource = nil
+        inboxSource?.cancel()
+        inboxSource = nil
         for source in subdirectorySources.values {
             source.cancel()
         }
@@ -97,6 +116,28 @@ final class DirectoryWatcher {
             }
         }
         reloadWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: item)
+    }
+
+    /// GCD event del `.inbox/` → hop a main → debounce → onInboxChange.
+    private func inboxEventHandler() -> @Sendable () -> Void {
+        { [weak self] in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.scheduleInboxChange()
+                }
+            }
+        }
+    }
+
+    private func scheduleInboxChange() {
+        inboxWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.onInboxChange?()
+            }
+        }
+        inboxWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: item)
     }
 }

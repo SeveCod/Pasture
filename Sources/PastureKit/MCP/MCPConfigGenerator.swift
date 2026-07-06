@@ -7,19 +7,30 @@ public enum MCPConfigGenerator {
 
     /// Comando para `claude mcp add` (Claude Code). El `--` separa los flags de
     /// Claude del comando real. Inyecta `PASTURE_FEED_FORMAT` (ADR-007) para que
-    /// el feed del server coincida con el formato actual del usuario.
-    public static func claudeCodeCommand(binaryPath: String, feedFormat: FeedFormat) -> String {
-        "claude mcp add pasture --env \(MCPServerConfig.feedFormatEnvKey)=\(feedFormat.rawValue) -- \(quoted(binaryPath))"
+    /// el feed del server coincida con el formato actual del usuario. Con
+    /// `allowProposals`, añade `PASTURE_ALLOW_PROPOSALS=1` (v1.8, habilita el inbox).
+    public static func claudeCodeCommand(binaryPath: String, feedFormat: FeedFormat,
+                                         allowProposals: Bool = false) -> String {
+        var cmd = "claude mcp add pasture --env \(MCPServerConfig.feedFormatEnvKey)=\(feedFormat.rawValue)"
+        if allowProposals {
+            cmd += " --env \(MCPServerConfig.allowProposalsEnvKey)=1"
+        }
+        cmd += " -- \(quoted(binaryPath))"
+        return cmd
     }
 
     /// Bloque JSON pegable en `claude_desktop_config.json` (clave `mcpServers`).
     /// Construido con `JSONEncoder` (no concatenación) para escapar correctamente
-    /// la ruta. Incluye `env.PASTURE_FEED_FORMAT` (ADR-007).
-    public static func claudeDesktopJSON(binaryPath: String, feedFormat: FeedFormat) -> String {
+    /// la ruta. Incluye `env.PASTURE_FEED_FORMAT` (ADR-007) y, con `allowProposals`,
+    /// `env.PASTURE_ALLOW_PROPOSALS=1` (v1.8).
+    public static func claudeDesktopJSON(binaryPath: String, feedFormat: FeedFormat,
+                                         allowProposals: Bool = false) -> String {
+        var env = [MCPServerConfig.feedFormatEnvKey: feedFormat.rawValue]
+        if allowProposals {
+            env[MCPServerConfig.allowProposalsEnvKey] = "1"
+        }
         let config = DesktopConfig(
-            mcpServers: ["pasture": ServerEntry(
-                command: binaryPath,
-                env: [MCPServerConfig.feedFormatEnvKey: feedFormat.rawValue])])
+            mcpServers: ["pasture": ServerEntry(command: binaryPath, env: env)])
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         guard let data = try? encoder.encode(config) else {

@@ -493,11 +493,59 @@ by ` | `.
 
 ---
 
+## Proposals (write-path, opt-in — since 1.8.0)
+
+By default the server is strictly read-only. Set `PASTURE_ALLOW_PROPOSALS=1` (or flip *"Allow write
+proposals"* in Settings → MCP, which injects it into the copied snippet) to expose two additional
+tools. Neither writes the visible vault: each **queues a proposal** in a hidden staging area,
+`~/.pasture/.inbox/`, that stays outside `list_files`, `search`, `read_file` and `feed_context`.
+
+- **`propose_note`** — args `filename` (required), `content` (required), `collection` (optional).
+  Queues a brand-new note.
+- **`propose_append`** — args `path` (required, an existing vault file), `content` (required).
+  Queues text to append to the end of that file.
+
+A queued proposal is inert until a human reviews it in the Pasture GUI (the **Inbox**): each shows
+its provenance (which MCP client proposed it, and when), the destination, a mandatory diff for
+appends, and any secret warning. Approving promotes it to the vault (new notes gain permanent
+`origin: agent` provenance frontmatter); rejecting discards it. There is no bulk approval, and the
+MCP server itself can never write the visible vault — promotion is a GUI-only action (SEC-M11).
+
+Guarantees on the write path: payloads are capped at 1 MB; the inbox holds at most 50 pending
+proposals; a proposal older than 14 days is retired automatically; destinations pass the same
+two-layer path validation (`..` + symlink) as reads; filenames are sanitized; `propose_append`
+requires an existing, non-symlink target; identical proposals (same content + destination) are
+deduplicated. Secrets found in a payload are surfaced as a masked warning and recorded in the
+proposal, but do not block queuing.
+
+**Known limitation — stored prompt injection.** A note approved from an agent proposal can carry
+instructions that influence future context. Pasture mitigates this with permanent `origin: agent`
+provenance and the mandatory human diff, but you should review proposed content as untrusted input.
+Reserved frontmatter keys in a proposal payload (`review_after`, `ttl`, `last_reviewed`, `source`,
+`generated`) are **stripped on promotion** so a proposal cannot silently mark itself as fresh, skip
+the review queue, or trigger source re-import — those metadata stay under human/Pasture control.
+
+**Other known limitations (accepted for v1.8):**
+
+- **Inbox cap is best-effort across processes.** If two MCP clients run with proposals enabled at
+  once (e.g. Claude Code *and* Claude Desktop), each has its own `pasture-mcp` process and the
+  50-proposal cap / dedup check are per-read, not locked — the on-disk total can briefly exceed 50.
+  The cap is an anti-flood guard, not a hard quota.
+- **Expiry is silent.** A pending proposal older than 14 days is retired the next time the inbox is
+  listed (e.g. when you open the review queue), with no separate notification.
+- **Append confirmation is time-of-check.** If you confirm "Append anyway" on a proposal whose
+  target changed, Pasture appends to the file's content *at write time*; a concurrent external edit
+  in the (small) window between the shown diff and the write is not re-detected.
+- A non-UTF-8 append target is reported as "target file no longer exists".
+
+---
+
 ## Environment variables
 
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `PASTURE_FEED_FORMAT` | `xml`, `markdown`, `plainText` | `xml` | Controls the feed payload format produced by `feed_context`. `xml` wraps content in CDATA tags (robust for model parsing); `markdown` uses CommonMark headings and dynamic fences; `plainText` uses a filename header with bare content. |
+| `PASTURE_ALLOW_PROPOSALS` | `1` (only) | unset | When exactly `1`, enables the Memory Inbox write-path: `propose_note` and `propose_append` appear in `tools/list`. Any other value (or unset) keeps the server strictly read-only. See **Proposals** below. |
 
 The registration snippets in Settings → MCP inject your current Feed Output Format setting
 automatically. If you change the format in Settings → Export → Feed Output Format, re-copy the

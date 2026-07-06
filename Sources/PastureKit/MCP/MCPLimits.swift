@@ -31,4 +31,17 @@ public enum MCPLimits {
     /// prompt legítimo pasa valores de KB; 100.000 chars es holgura amplia y
     /// corta un argumento patológico antes de que el render lo multiplique.
     public static let maxPromptArgumentLength = 100_000
+
+    // MARK: — v1.8 Memory Inbox (camino de propuestas de escritura)
+
+    /// SEC-M14: tamaño máximo del payload de una propuesta (`propose_note`/`_append`).
+    public static let maxProposalBytes = 1_000_000   // 1 MB
+
+    /// SEC-M15: tope de propuestas pendientes en `.inbox/`. Por encima → `isError`,
+    /// se rechaza la nueva propuesta sin escribir (evita inundar la bandeja).
+    public static let maxPendingProposals = 50
+
+    /// Caducidad (días) de una propuesta pendiente. Al listar, una más antigua se
+    /// retira de la bandeja sin intervención humana (reloj inyectado).
+    public static let proposalTTLDays = 14
 }

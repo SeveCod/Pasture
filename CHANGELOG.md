@@ -5,6 +5,22 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-07-06
+
+### Added
+
+- **Memory Inbox** — the MCP server can now *propose* vault edits, closing the vault→AI→vault loop without giving an agent write access to your notes. With `PASTURE_ALLOW_PROPOSALS=1`, two new tools appear: `propose_note` (a new note) and `propose_append` (add to an existing file). Neither touches the visible vault: each queues a proposal in a hidden `~/.pasture/.inbox/`. You review each proposal from the GUI — with a mandatory diff for appends and full provenance (which client proposed it, when) — and only then does it land in the vault. There is no bulk "approve all". Rejecting discards it. Promoted notes carry permanent provenance frontmatter (`origin: agent`).
+- **Settings → MCP** gains a toggle, *"Allow write proposals (require your approval)"*; enabling it injects the env var into the copied registration snippets. A sidebar **"Inbox (N)"** badge opens the review queue when proposals are pending.
+
+### Security
+
+- **SEC-M11 redefined**: the MCP server still has no write-path to the *visible* vault and defaults to strictly read-only (without the env var, `tools/list` is byte-identical to v1.7). Proposals write exclusively to the hidden `.inbox/`, which stays outside `FileLibrary`, the feed and the read tools. Promotion to the vault is a human-only GUI action. Proposal payloads are capped at 1 MB (SEC-M14), the inbox at 50 pending (SEC-M15), with a 14-day TTL; destinations pass the same two-layer path validation as reads; filenames are sanitized; secrets are scanned and surfaced (masked) without blocking; duplicates are rejected. Stored prompt-injection is a documented residual risk, mitigated by permanent provenance + mandatory diff.
+- **Adversarial-review hardening** (pre-merge): `MCPPathResolver` now rejects any hidden path component (`.`-prefixed), so `.inbox/` is neither readable by path nor a valid proposal destination; provenance-frontmatter values are collapsed to a single line and `clientInfo.name` is sanitized on ingest (no frontmatter injection via a hostile client name); reserved frontmatter keys are stripped from a proposal payload on promotion (no freshness/source spoofing); `ProposalStore.delete` removes the metadata before the payload (no phantom proposal after a mid-delete crash).
+
+### Changed
+
+- MCP server version → 1.8.0. `MCPDispatcher` is now a `final class` (captures `clientInfo` for provenance). Test count: 632 → 690 (new `Proposal`, `ProposalStore`, `ProposalPromoter`, proposal-tool, config, dispatcher-provenance, limits, path-resolver and injection-hardening suites).
+
 ## [1.7.0] - 2026-07-05
 
 ### Added

@@ -26,6 +26,14 @@ public enum MCPPathResolver {
             return .failure(.absolutePathRejected)
         }
 
+        // v1.8: rechazar cualquier componente oculto (empieza por `.`). Alinea la
+        // resolución de rutas de tool con la política de ocultos de `FileLibrary`
+        // (que salta ocultos al enumerar), de modo que `.inbox/` no sea legible por
+        // path ni sea un destino de propuesta válido. Captura además `.`/`..`.
+        for component in relativePath.split(separator: "/") where component.hasPrefix(".") {
+            return .failure(.outsideVault)
+        }
+
         let candidate = vaultRoot.appendingPathComponent(relativePath)
 
         // Capa 1 (SEC-M1): contención por `..` con la semántica de PathValidator.
