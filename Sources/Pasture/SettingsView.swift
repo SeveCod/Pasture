@@ -340,6 +340,9 @@ private struct MCPSettingsTab: View {
     @State private var feedback: String?
     @State private var secretStats: MCPVaultStats.SecretStats?
     @State private var isScanning = false
+    /// v1.8: si el usuario habilita las propuestas de escritura, los snippets
+    /// copiados inyectan `PASTURE_ALLOW_PROPOSALS=1`. Persistido (UserDefaults).
+    @AppStorage("mcpAllowProposals") private var allowProposals = false
 
     /// Ruta real del binario embebido. NUNCA hardcodeada: se deriva de la
     /// ubicación del .app en ejecución, así mover el .app mueve la ruta (HU-2).
@@ -366,7 +369,10 @@ private struct MCPSettingsTab: View {
             //    consentimiento informado se basa en escanear antes (orden por Alfred).
             secretCheckSection
 
-            // 3. Registro del server (HU-2/3).
+            // 3. Propuestas de escritura (v1.8): opt-in, afecta a los snippets.
+            proposalsSection
+
+            // 4. Registro del server (HU-2/3).
             registerSection
         }
         .formStyle(.grouped)
@@ -432,6 +438,17 @@ private struct MCPSettingsTab: View {
         }
     }
 
+    private var proposalsSection: some View {
+        Section {
+            Toggle("Allow write proposals (require your approval)", isOn: $allowProposals)
+        } header: {
+            Text("Write proposals")
+        } footer: {
+            Text("When on, the MCP client can PROPOSE new notes or additions. Proposals never touch your vault directly — they land in a review inbox and you approve or reject each one in Pasture. Off by default: the server stays strictly read-only.")
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+        }
+    }
+
     private var registerSection: some View {
         Section {
             // M-3: Feed format activo (solo lectura).
@@ -439,7 +456,7 @@ private struct MCPSettingsTab: View {
 
             // Claude Code.
             Button {
-                copy(MCPConfigGenerator.claudeCodeCommand(binaryPath: binaryPath, feedFormat: feedFormat))
+                copy(MCPConfigGenerator.claudeCodeCommand(binaryPath: binaryPath, feedFormat: feedFormat, allowProposals: allowProposals))
             } label: {
                 Label("Copy configuration (Claude Code)", systemImage: "terminal")
             }
@@ -451,7 +468,7 @@ private struct MCPSettingsTab: View {
 
             // Claude Desktop.
             Button {
-                copy(MCPConfigGenerator.claudeDesktopJSON(binaryPath: binaryPath, feedFormat: feedFormat))
+                copy(MCPConfigGenerator.claudeDesktopJSON(binaryPath: binaryPath, feedFormat: feedFormat, allowProposals: allowProposals))
             } label: {
                 Label("Copy configuration (Claude Desktop)", systemImage: "doc.on.clipboard")
             }

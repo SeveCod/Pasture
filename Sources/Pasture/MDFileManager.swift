@@ -27,6 +27,10 @@ final class MDFileManager: ObservableObject {
     }
     @Published var lastError: String?
 
+    /// v1.8 Memory Inbox — propuestas de escritura del agente MCP, pendientes de
+    /// revisión humana. Vacío mientras nadie proponga (o esté deshabilitado).
+    @Published private(set) var pendingProposals: [Proposal] = []
+
     /// Cached search result — recomputed only when `files` or `searchQuery` change,
     /// not on every SwiftUI body evaluation.
     @Published private(set) var filteredFiles: [MDFile] = []
@@ -35,6 +39,9 @@ final class MDFileManager: ObservableObject {
     private var loadTask: Task<Void, Never>?
 
     static let pastureDir: URL = pastureDirURL
+
+    /// v1.8: staging oculto donde el servidor MCP deposita propuestas.
+    static let inboxDir: URL = pastureDirURL.appendingPathComponent(".inbox", isDirectory: true)
 
     private func updateFilteredFiles() {
         filteredFiles = searchQuery.isEmpty ? files : files.filter { $0.matches(query: searchQuery) }
@@ -95,6 +102,62 @@ final class MDFileManager: ObservableObject {
         }
         watcher.watchRoot(Self.pastureDir)
         loadFiles()
+
+        // v1.8 Memory Inbox: crear el staging para poder observarlo desde el
+        // arranque (si no existe, el MCP lo crea al llegar la primera propuesta,
+        // pero entonces el watcher no estaría montado y perderíamos ese evento).
+        try? fm.createDirectory(at: Self.inboxDir, withIntermediateDirectories: true)
+        watcher.onInboxChange = { [weak self] in self?.loadProposals() }
+        watcher.watchInbox(Self.inboxDir)
+        loadProposals()
+    }
+
+    // MARK: — Memory Inbox (v1.8)
+
+    /// Recarga las propuestas pendientes del `.inbox/` (aplica el TTL).
+    func loadProposals() {
+        pendingProposals = ProposalStore.loadPending(inboxRoot: Self.inboxDir)
+    }
+
+    /// Payload (contenido propuesto) de una propuesta, para mostrarlo/diffearlo.
+    func proposalPayload(_ proposal: Proposal) -> String? {
+        ProposalStore.payload(for: proposal.id, inboxRoot: Self.inboxDir)
+    }
+
+    /// Contenido actual del destino de un `.append` (para recalcular el diff si el
+    /// fichero cambió). `nil` si el destino ya no existe.
+    func appendTargetContent(_ proposal: Proposal) -> String? {
+        guard let rel = proposal.relativePath,
+              case .success(let url) = MCPPathResolver.resolve(relativePath: rel, vaultRoot: Self.pastureDir)
+        else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// Promociona una propuesta al vault visible. Devuelve el `Result` para que la
+    /// GUI muestre el error (p. ej. `.hashMismatch` → confirmar de nuevo).
+    /// `overrideChangedTarget` solo para `.append` cuyo destino cambió: la GUI lo
+    /// pone a `true` tras enseñar el diff recalculado y recibir confirmación.
+    @discardableResult
+    func promote(_ proposal: Proposal, overrideChangedTarget: Bool = false)
+        -> Result<URL, ProposalPromoter.PromoteError> {
+        let result: Result<URL, ProposalPromoter.PromoteError>
+        switch proposal.kind {
+        case .note:
+            result = ProposalPromoter.promoteNote(proposal, inboxRoot: Self.inboxDir, vaultRoot: Self.pastureDir)
+        case .append:
+            result = ProposalPromoter.promoteAppend(proposal, inboxRoot: Self.inboxDir,
+                                                    vaultRoot: Self.pastureDir,
+                                                    overrideChangedTarget: overrideChangedTarget)
+        }
+        loadProposals()
+        if case .success = result { loadFiles() }
+        return result
+    }
+
+    /// Rechaza una propuesta: borra su par del `.inbox/`, sin tocar el vault.
+    func reject(_ proposal: Proposal) {
+        ProposalPromoter.reject(proposal, inboxRoot: Self.inboxDir)
+        loadProposals()
     }
 
     // MARK: — CRUD

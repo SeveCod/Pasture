@@ -4,7 +4,7 @@ import Foundation
 public enum MCPProtocol {
     public static let version = "2025-06-18"
     public static let serverName = "pasture-mcp"
-    public static let serverVersion = "1.6.0"
+    public static let serverVersion = "1.8.0"
 
     // Códigos JSON-RPC para errores de PROTOCOLO (no de tool — D6 / ADR-006).
     public static let parseError = -32700

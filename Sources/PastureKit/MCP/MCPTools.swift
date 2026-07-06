@@ -43,10 +43,12 @@ public enum MCPTools {
 
     // MARK: — Catálogo
 
-    /// Catálogo para `tools/list`. Las cuatro tools, cada una con
-    /// `inputSchema.type == "object"` (gotcha 4).
-    public static func catalog() -> ToolsListResult {
-        ToolsListResult(tools: [
+    /// Catálogo para `tools/list`. Las cuatro tools de lectura, cada una con
+    /// `inputSchema.type == "object"` (gotcha 4). Con `includingProposals` se
+    /// añaden `propose_note`/`propose_append` (v1.8) — SIN el flag el catálogo es
+    /// byte-idéntico a v1.7 (regresión de solo-lectura, SEC-M11).
+    public static func catalog(includingProposals: Bool = false) -> ToolsListResult {
+        var tools: [ToolDefinition] = [
             ToolDefinition(
                 name: "list_files",
                 description: "List all Markdown files and collections in the Pasture vault (~/.pasture/), read-only.",
@@ -72,14 +74,38 @@ public enum MCPTools {
                         "files": PropertySchema(type: "array", items: ItemSchema(type: "string")),
                     ],
                     required: [])),
-        ])
+        ]
+        if includingProposals {
+            tools.append(ToolDefinition(
+                name: "propose_note",
+                description: "Propose a NEW note for the vault. Does NOT write it: it is queued in a review inbox and requires explicit human approval before it lands in ~/.pasture/.",
+                inputSchema: InputSchema(
+                    properties: [
+                        "filename": PropertySchema(type: "string"),
+                        "content": PropertySchema(type: "string"),
+                        "collection": PropertySchema(type: "string"),
+                    ],
+                    required: ["filename", "content"])))
+            tools.append(ToolDefinition(
+                name: "propose_append",
+                description: "Propose appending text to an EXISTING vault file. Does NOT write it: it is queued in a review inbox and requires explicit human approval.",
+                inputSchema: InputSchema(
+                    properties: [
+                        "path": PropertySchema(type: "string"),
+                        "content": PropertySchema(type: "string"),
+                    ],
+                    required: ["path", "content"])))
+        }
+        return ToolsListResult(tools: tools)
     }
 
     // MARK: — Ejecución (tools/call)
 
     /// Despacho de `tools/call`. Devuelve `ToolCallResult` (`isError` de tool,
     /// nunca lanza). Un nombre de tool inválido es error de TOOL, no de protocolo.
-    public static func run(params: JSONValue?, config: MCPServerConfig) -> ToolCallResult {
+    /// `proposedBy` = nombre del cliente MCP (del `initialize`), o "unknown".
+    public static func run(params: JSONValue?, config: MCPServerConfig,
+                           proposedBy: String = "unknown") -> ToolCallResult {
         guard let name = params?.object?["name"]?.stringValue else {
             return .failure("falta el nombre de la tool")
         }
@@ -94,9 +120,130 @@ public enum MCPTools {
             return search(arguments: arguments, config: config)
         case "feed_context":
             return feedContext(arguments: arguments, config: config)
+        // Tools de escritura: solo si el flag está activo; si no, "desconocida".
+        case "propose_note" where config.allowProposals:
+            return proposeNote(arguments: arguments, config: config, proposedBy: proposedBy)
+        case "propose_append" where config.allowProposals:
+            return proposeAppend(arguments: arguments, config: config, proposedBy: proposedBy)
         default:
             return .failure("tool desconocida: \(name)")
         }
+    }
+
+    // MARK: — Tools de escritura (v1.8 Memory Inbox)
+
+    /// Directorio staging oculto, fuera de `FileLibrary`/feed/tools de lectura.
+    static func inboxRoot(_ config: MCPServerConfig) -> URL {
+        config.vaultRoot.appendingPathComponent(".inbox", isDirectory: true)
+    }
+
+    /// `propose_note`: encola una nota nueva en el inbox. Orden: validar args →
+    /// cap tamaño → sanitizar nombre → validar destino (doble capa) → cap pendientes
+    /// → escanear secretos → dedupe → guardar. Cualquier fallo = `isError`.
+    static func proposeNote(arguments: JSONValue?, config: MCPServerConfig,
+                            proposedBy: String) -> ToolCallResult {
+        guard let rawName = arguments?.object?["filename"]?.stringValue, !rawName.isEmpty else {
+            return .failure("se requiere el argumento 'filename'")
+        }
+        guard let content = arguments?.object?["content"]?.stringValue else {
+            return .failure("se requiere el argumento 'content'")
+        }
+        if content.utf8.count > MCPLimits.maxProposalBytes {
+            return .failure("propuesta demasiado grande (máximo \(MCPLimits.maxProposalBytes) bytes)")
+        }
+        let filename = FilenameSanitizer.sanitize(rawName)
+        guard !filename.isEmpty else { return .failure("nombre de fichero inválido") }
+        let collection = arguments?.object?["collection"]?.stringValue
+
+        // Validación de destino con la misma doble capa que la lectura (SEC-M1/M2).
+        let relPath = collection.map { "\($0)/\(filename)" } ?? filename
+        if case .failure = MCPPathResolver.resolve(relativePath: relPath, vaultRoot: config.vaultRoot) {
+            return .failure("ruta fuera del vault")
+        }
+
+        let inbox = inboxRoot(config)
+        if ProposalStore.pendingCount(inboxRoot: inbox) >= MCPLimits.maxPendingProposals {
+            return .failure("bandeja de propuestas llena (máximo \(MCPLimits.maxPendingProposals))")
+        }
+
+        let summary = secretSummary(fileName: filename, content: content)
+        let proposal = Proposal.note(filename: filename, collection: collection, content: content,
+                                     proposedBy: proposedBy, secretSummary: summary)
+        if ProposalStore.contains(payloadHash: proposal.payloadHash,
+                                  destinationKey: proposal.destinationKey, inboxRoot: inbox) {
+            return .failure("propuesta duplicada (mismo contenido y destino)")
+        }
+
+        do {
+            try ProposalStore.save(proposal, payload: content, inboxRoot: inbox)
+        } catch {
+            return .failure("no se pudo guardar la propuesta")
+        }
+        return .ok("Proposal queued in review inbox (awaiting human approval): \(filename)",
+                   warning: proposalSecretWarning(summary))
+    }
+
+    /// `propose_append`: encola un añadido a un fichero EXISTENTE. El destino debe
+    /// existir y no ser un symlink; se graba el `targetHash` del contenido actual
+    /// para detectar cambios en el momento de la aprobación.
+    static func proposeAppend(arguments: JSONValue?, config: MCPServerConfig,
+                              proposedBy: String) -> ToolCallResult {
+        guard let path = arguments?.object?["path"]?.stringValue, !path.isEmpty else {
+            return .failure("se requiere el argumento 'path'")
+        }
+        guard let content = arguments?.object?["content"]?.stringValue else {
+            return .failure("se requiere el argumento 'content'")
+        }
+        if content.utf8.count > MCPLimits.maxProposalBytes {
+            return .failure("propuesta demasiado grande (máximo \(MCPLimits.maxProposalBytes) bytes)")
+        }
+
+        // El destino no debe ser un symlink (defensa extra sobre la doble capa).
+        let candidate = config.vaultRoot.appendingPathComponent(path)
+        if (try? candidate.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+            return .failure("el destino es un symlink")
+        }
+        let resolved: URL
+        switch MCPPathResolver.resolve(relativePath: path, vaultRoot: config.vaultRoot) {
+        case .failure: return .failure("ruta fuera del vault")
+        case .success(let url): resolved = url
+        }
+        guard let current = try? String(contentsOf: resolved, encoding: .utf8) else {
+            return .failure("el fichero destino no existe")
+        }
+
+        let inbox = inboxRoot(config)
+        if ProposalStore.pendingCount(inboxRoot: inbox) >= MCPLimits.maxPendingProposals {
+            return .failure("bandeja de propuestas llena (máximo \(MCPLimits.maxPendingProposals))")
+        }
+
+        let summary = secretSummary(fileName: resolved.lastPathComponent, content: content)
+        let proposal = Proposal.append(relativePath: path, content: content,
+                                       targetHash: SyncMarker.sha256(current),
+                                       proposedBy: proposedBy, secretSummary: summary)
+        if ProposalStore.contains(payloadHash: proposal.payloadHash,
+                                  destinationKey: proposal.destinationKey, inboxRoot: inbox) {
+            return .failure("propuesta duplicada (mismo contenido y destino)")
+        }
+
+        do {
+            try ProposalStore.save(proposal, payload: content, inboxRoot: inbox)
+        } catch {
+            return .failure("no se pudo guardar la propuesta")
+        }
+        return .ok("Append proposal queued in review inbox (awaiting human approval): \(path)",
+                   warning: proposalSecretWarning(summary))
+    }
+
+    /// Resumen enmascarado de secretos del payload (familia + fichero), o `nil`.
+    static func secretSummary(fileName: String, content: String) -> String? {
+        let result = SecretScanner.scan(fileName: fileName, content: content)
+        return result.isEmpty ? nil : result.summaryLines().joined(separator: "; ")
+    }
+
+    /// Aviso no bloqueante para el `ToolCallResult` a partir del resumen (o `nil`).
+    static func proposalSecretWarning(_ summary: String?) -> String? {
+        summary.map { "possible secrets detected (proposal stored, needs human approval): \($0)" }
     }
 
     // MARK: — Implementación de tools (rellenadas por TDD en bloques 4-7)

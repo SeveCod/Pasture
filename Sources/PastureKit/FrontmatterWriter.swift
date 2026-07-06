@@ -20,18 +20,48 @@ public enum FrontmatterWriter {
 
     /// Inserta/actualiza `key: value` en el bloque frontmatter, conservando el
     /// resto de claves y el cuerpo. Antepone un bloque nuevo si no había.
+    ///
+    /// SEC (v1.8): el `value` se colapsa a una sola línea (CR/LF → espacio) antes
+    /// de escribirse. Sin esto, un value con `\n` (p. ej. `proposed_by` derivado de
+    /// un `clientInfo.name` hostil) inyectaría líneas de frontmatter arbitrarias o
+    /// rompería el bloque con `---` (frontmatter injection, H1).
     static func setting(key: String, value: String, in content: String) -> String {
+        let safeValue = singleLine(value)
         let parsed = FrontmatterParser.parse(content)
         guard parsed.frontmatter != nil, var lines = extractBlockLines(content) else {
-            return "---\n\(key): \(value)\n---\n" + content
+            return "---\n\(key): \(safeValue)\n---\n" + content
         }
         if let idx = lines.firstIndex(where: { keyOf($0) == key }) {
-            lines[idx] = "\(key): \(value)"
+            lines[idx] = "\(key): \(safeValue)"
         } else {
-            lines.append("\(key): \(value)")
+            lines.append("\(key): \(safeValue)")
         }
         let newBlock = "---\n" + lines.joined(separator: "\n") + "\n---\n"
         return newBlock + parsed.body
+    }
+
+    /// SEC (v1.8, H2): despoja del bloque frontmatter las claves indicadas,
+    /// conservando el resto y el cuerpo. Se usa para quitar del payload propuesto
+    /// por un agente las claves reservadas (frescura/`source`/`generated`), que
+    /// solo Pasture/el humano deben controlar — un agente no puede así plantar una
+    /// nota que evade la cola de revisión o dispara la re-importación de fuentes.
+    static func removing(keys: Set<String>, in content: String) -> String {
+        guard let lines = extractBlockLines(content) else { return content }
+        let kept = lines.filter { line in
+            guard let key = keyOf(line) else { return true }
+            return !keys.contains(key)
+        }
+        let body = FrontmatterParser.parse(content).body
+        guard !kept.isEmpty else { return body }
+        return "---\n" + kept.joined(separator: "\n") + "\n---\n" + body
+    }
+
+    /// Colapsa CR/LF a un solo espacio para que un value ocupe una única línea.
+    static func singleLine(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
     }
 
     // MARK: — Helpers internos

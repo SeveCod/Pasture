@@ -15,11 +15,13 @@ struct SidebarView: View {
     @State private var filePendingRename: MDFile?
     @State private var collectionPendingRename: String?
     @State private var showReviewQueue = false
+    @State private var showInbox = false
 
     var body: some View {
         VStack(spacing: 0) {
             searchBar
             Color.pastureDivider(colorScheme).frame(height: 1)
+            inboxBanner
             reviewBanner
             fileList
             Color.pastureDivider(colorScheme).frame(height: 1)
@@ -27,6 +29,9 @@ struct SidebarView: View {
         }
         .sheet(isPresented: $showReviewQueue) {
             ReviewQueueSheet(fm: fm)
+        }
+        .sheet(isPresented: $showInbox) {
+            ReviewInboxSheet(fm: fm)
         }
         .background(Color.pastureSidebar(colorScheme))
         .alert("Delete collection?",
@@ -54,6 +59,35 @@ struct SidebarView: View {
                     fm.renameCollection(name, to: newName)
                 }
             }
+        }
+    }
+
+    /// v1.8: badge de la bandeja de propuestas — visible solo si hay pendientes.
+    @ViewBuilder
+    private var inboxBanner: some View {
+        let count = fm.pendingProposals.count
+        if count > 0 {
+            Button {
+                showInbox = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "tray.and.arrow.down")
+                        .foregroundStyle(Color.pastureAccent(colorScheme))
+                    Text("Inbox (\(count))")
+                        .font(.pastureStatusBar)
+                        .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                }
+                .padding(.horizontal, PastureLayout.searchBarHPadding)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Review inbox, \(count) proposals pending")
+            Color.pastureDivider(colorScheme).frame(height: 1)
         }
     }
 

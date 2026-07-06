@@ -10,15 +10,23 @@ public struct MCPServerConfig: Sendable {
     public let vaultRoot: URL
     /// Formato del feed para `feed_context`. Default `.xml` (igual que la app).
     public let feedFormat: FeedFormat
+    /// v1.8: si es `true`, el catálogo expone las tools de propuesta (write-path
+    /// al `.inbox/`). Default `false` = regresión de solo-lectura idéntica a v1.7.
+    public let allowProposals: Bool
 
-    public init(vaultRoot: URL, feedFormat: FeedFormat) {
+    public init(vaultRoot: URL, feedFormat: FeedFormat, allowProposals: Bool = false) {
         self.vaultRoot = vaultRoot
         self.feedFormat = feedFormat
+        self.allowProposals = allowProposals
     }
 
     /// Variable de entorno que el cliente MCP puede inyectar en su config para
     /// fijar el formato del feed. Ausente o inválida ⇒ default `.xml`.
     public static let feedFormatEnvKey = "PASTURE_FEED_FORMAT"
+
+    /// Variable de entorno que habilita el camino de propuestas. Solo el valor
+    /// exacto `"1"` lo activa; cualquier otra cosa (o ausente) ⇒ `false`.
+    public static let allowProposalsEnvKey = "PASTURE_ALLOW_PROPOSALS"
 
     /// Construye la configuración desde el entorno del proceso.
     /// - Vault: `~/.pasture/` (raíz única, ADR-003).
@@ -30,6 +38,7 @@ public struct MCPServerConfig: Sendable {
         let vault = homeDirectory.appendingPathComponent(".pasture", isDirectory: true)
         let format = environment[feedFormatEnvKey]
             .flatMap { FeedFormat(rawValue: $0) } ?? .xml
-        return MCPServerConfig(vaultRoot: vault, feedFormat: format)
+        let allowProposals = environment[allowProposalsEnvKey] == "1"
+        return MCPServerConfig(vaultRoot: vault, feedFormat: format, allowProposals: allowProposals)
     }
 }
