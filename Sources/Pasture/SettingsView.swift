@@ -1,10 +1,13 @@
 import SwiftUI
 import AppKit
 import PastureKit
+import ServiceManagement
 
 struct SettingsView: View {
     var body: some View {
         TabView {
+            GeneralSettingsTab()
+                .tabItem { Label("General", systemImage: "gearshape") }
             ExportSettingsTab()
                 .tabItem { Label("Export", systemImage: "square.and.arrow.up") }
             AISettingsTab()
@@ -15,6 +18,103 @@ struct SettingsView: View {
                 .tabItem { Label("MCP", systemImage: "powerplug") }
         }
         .frame(minWidth: 560, minHeight: 280)
+    }
+}
+
+// MARK: - General Tab (v1.9)
+
+private struct GeneralSettingsTab: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var launchAtLogin = false
+    @State private var hideDockIcon = IntegrationSettings.hideDockIcon()
+    @State private var hotkeysEnabled = IntegrationSettings.globalHotkeysEnabled()
+    @State private var presets: [SelectionPreset] = SelectionPresetStore.load()
+    @State private var defaultPresetID: UUID? = IntegrationSettings.defaultPresetID()
+    @State private var loginItemError: String?
+
+    /// SMAppService exige app empaquetada (falla bajo `swift run`).
+    private var isBundled: Bool { Bundle.main.bundleURL.pathExtension == "app" }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Launch Pasture at login", isOn: $launchAtLogin)
+                    .disabled(!isBundled)
+                    .onChange(of: launchAtLogin) { _, newValue in updateLoginItem(newValue) }
+                if !isBundled {
+                    Text("Available when running the bundled app.")
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                }
+                if let loginItemError {
+                    Text(loginItemError)
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureError(colorScheme))
+                }
+                Toggle("Hide Dock icon (menu bar only)", isOn: $hideDockIcon)
+                    .onChange(of: hideDockIcon) { _, newValue in
+                        IntegrationSettings.setHideDockIcon(newValue)
+                        NSApp.setActivationPolicy(newValue ? .accessory : .regular)
+                        if !newValue { NSApp.activate(ignoringOtherApps: true) }
+                    }
+            } header: {
+                Text("Startup")
+            }
+
+            Section {
+                Toggle("Enable global hotkeys", isOn: $hotkeysEnabled)
+                    .onChange(of: hotkeysEnabled) { _, newValue in
+                        IntegrationSettings.setGlobalHotkeysEnabled(newValue)
+                    }
+                LabeledContent("Feed default preset", value: "\u{2303}\u{2325}\u{2318}F")
+                LabeledContent("Capture clipboard", value: "\u{2303}\u{2325}\u{2318}N")
+            } header: {
+                Text("Global Hotkeys")
+            } footer: {
+                Text("System-wide shortcuts that work without opening Pasture. Feed copies the default preset's context to the clipboard; Capture saves the clipboard as a new note in Captures/.")
+                    .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+            }
+
+            Section {
+                Picker("Default preset", selection: $defaultPresetID) {
+                    Text("None").tag(UUID?.none)
+                    ForEach(presets) { preset in
+                        Text(preset.name).tag(UUID?.some(preset.id))
+                    }
+                }
+                .onChange(of: defaultPresetID) { _, newValue in
+                    IntegrationSettings.setDefaultPresetID(newValue)
+                }
+            } header: {
+                Text("Headless Feed")
+            } footer: {
+                Text("Preset used by the global feed hotkey and pasture://feed. With no default set, the hotkey only works when exactly one preset exists.")
+                    .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            if isBundled { launchAtLogin = SMAppService.mainApp.status == .enabled }
+            presets = SelectionPresetStore.load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: SelectionPresetStore.didChangeNotification)) { _ in
+            presets = SelectionPresetStore.load()
+        }
+    }
+
+    private func updateLoginItem(_ enable: Bool) {
+        guard isBundled else { return }
+        do {
+            if enable {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            loginItemError = nil
+        } catch {
+            loginItemError = "Could not update login item: \(error.localizedDescription)"
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
     }
 }
 
