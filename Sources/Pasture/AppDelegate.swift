@@ -1,4 +1,5 @@
 import AppKit
+import PastureKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated(unsafe) private var lockFD: Int32 = -1
@@ -19,6 +20,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             DispatchQueue.main.async {
                 NSApplication.shared.terminate(nil)
+            }
+            return
+        }
+
+        // v1.9 — integración de sistema: política de Dock + hotkeys globales.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if IntegrationSettings.hideDockIcon() {
+                    NSApplication.shared.setActivationPolicy(.accessory)
+                }
+                GlobalHotkeyManager.shared.start()
             }
         }
     }
