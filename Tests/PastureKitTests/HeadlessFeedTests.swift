@@ -29,7 +29,9 @@ struct HeadlessFeedTests {
         }
         #expect(result.fileCount == 2)
         #expect(result.missingPaths == ["gone.md"])
-        #expect(result.context.contains("a.md"))
+        // ContextBuilder añade ".md" al nombre: pasarle "a.md" produciría "a.md.md".
+        #expect(result.context.contains("name=\"a.md\""))
+        #expect(!result.context.contains("a.md.md"))
         #expect(result.tokens > 0)
     }
 

@@ -29,7 +29,9 @@ public enum HeadlessFeed {
         for url in resolution.urls {
             guard let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
             existing.insert(url)
-            entries.append(.init(name: url.lastPathComponent, content: content))
+            // FileEntry.name va SIN extensión: ContextBuilder añade ".md" él mismo
+            // (mismo contrato que MDFile.name en el feed de la GUI).
+            entries.append(.init(name: url.deletingPathExtension().lastPathComponent, content: content))
         }
         let missing = PresetResolver.missingPaths(
             relativePaths: preset.relativePaths, base: base, existing: existing
