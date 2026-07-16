@@ -5,6 +5,21 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-07-16
+
+### Added
+
+- **Global hotkeys** (opt-in, Settings → General): ⌃⌥⌘F feeds the default preset's context straight to the clipboard — no window involved — and ⌃⌥⌘N captures the clipboard as a new note in `Captures/`. Implemented with Carbon `RegisterEventHotKey` (an Apple framework: zero-dependency rule intact, and no Accessibility permission needed). Feedback arrives via Notification Center; under `swift run` (unbundled) it degrades to stderr.
+- **`pasture://` URL scheme**: `pasture://feed[?preset=Name]` (headless feed to clipboard), `pasture://new?title=T&text=B` (capture a note), `pasture://search?q=term` (open the main window with the search applied). Parser is pure and testable (`PastureURLCommand`); ready for Raycast/Alfred/scripts.
+- **Services menu**: "New Pasture Capture" — select text in any app and send it to `Captures/` from the Services menu.
+- **Settings → General** (new first tab): launch at login (`SMAppService`), hide Dock icon (menu-bar-only mode, applied live), global hotkeys toggle, and the default preset used by the headless feed.
+- **Headless feed engine** (`HeadlessFeed`, PastureKit): resolves a preset, reads the files, scans for secrets and builds the context. Missing files don't block (they're reported); **secrets do block** — with no dialog available, the conservative equivalent of the GUI's default-Cancel is not delivering at all. The 60-second clipboard auto-clear invariant is preserved.
+- **Quick capture** (`QuickCapture`, PastureKit): derives the note name from the explicit title or first non-empty line (sanitized, ≤40 chars; deterministic timestamp fallback). Captures land in the visible `Captures/` collection — deliberately distinct from the hidden `.inbox/` of the Memory Inbox.
+
+### Changed
+
+- `bundle.sh` now ad-hoc code-signs the app bundle (nested `pasture-mcp` first) and declares `CFBundleURLTypes` + `NSServices` in Info.plist. Version → 1.9.0. Test count: 690 → 710 (new `IntegrationSettings`, `PastureURLCommand`, `QuickCapture`, `HeadlessFeed` suites).
+
 ## [1.8.0] - 2026-07-06
 
 ### Added

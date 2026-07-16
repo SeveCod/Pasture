@@ -13,7 +13,7 @@ The detail panel toggles between a read-only Markdown preview and an Ask mode fo
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
-swift test               # Run all PastureKit unit tests (607 tests, Swift Testing framework)
+swift test               # Run all PastureKit unit tests (710 tests, Swift Testing framework)
 swift test --filter TemplateEngineTests                        # Run one test suite
 swift test --filter TemplateEngineTests/renderSimpleReplacement # Run a single test
 swift test --filter MCPDispatcherTests                         # MCP dispatcher tests
@@ -35,7 +35,7 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 - **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security), `FileLibrary` (filesystem queries: async library scan, dedup URLs, hidden/symlink filtering), `DocumentImporter` (PDF/CSV/DOCX → Markdown conversion, no persistence), `FeedFormat`/`FeedFormatSettings` (feed payload format enum + UserDefaults persistence), `SecretScanner` (pre-feed credential detector), `ContextLimit` (binary context-window guard for sidebar), `SelectionPreset`/`SelectionPresetStore` (named file selections with relative-path persistence), `PresetResolver` (relative-path → URL resolution with path-traversal guard). Also contains the full MCP layer — see **MCP layer** subsection below. All public. This is the testable module.
 - **Pasture** (`Sources/Pasture/`) — SwiftUI app. Re-exports PastureKit via `@_exported import PastureKit` in `TemplateEngine.swift`.
 - **pasture-mcp** (`Sources/pasture-mcp/`) — MCP server executable. A thin `main.swift` (~30 lines) that wires `FileHandle.standardInput` to `MCPLineReader` and feeds each line to `MCPDispatcher`. All protocol logic lives in PastureKit (ADR-MCP-004). Zero external dependencies beyond PastureKit and Foundation.
-- **PastureKitTests** (`Tests/PastureKitTests/`) — 607 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 9 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`, `MCPResourcesTests`, `MCPPromptsTests`.
+- **PastureKitTests** (`Tests/PastureKitTests/`) — 710 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 9 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`, `MCPResourcesTests`, `MCPPromptsTests`.
 
 ### Data flow
 
@@ -157,6 +157,21 @@ Closes the loop: an MCP agent can *propose* vault edits but never writes the vis
 - **`ProposalPromoter`** — the ONLY write-path to the visible vault, GUI-only. `promoteNote` (provenance frontmatter `origin: agent`/`proposed_by`/`proposed_at`/`approved_at` + `FileLibrary.deduplicatedURL`), `promoteAppend` (appends with `\n\n`, never replaces; returns `.hashMismatch(currentContent:)` if the target changed since propose, `.targetMissing` if gone), `reject`. Validates the destination through both `MCPPathResolver` layers before any I/O; removes the inbox pair on success.
 - **MCP layer**: `MCPServerConfig.allowProposals` (from `PASTURE_ALLOW_PROPOSALS`, ADR-MCP-007); `MCPTools.catalog(includingProposals:)` conditionally adds `propose_note`/`propose_append`; `MCPTools.run(...proposedBy:)` gates them on the flag; `MCPDispatcher` is now a `final class @unchecked Sendable` (safe: single-thread loop, ADR-MCP-005) that captures `clientInfo.name` at `initialize` for provenance; `MCPConfigGenerator` injects the env var into both snippets when enabled; caps in `MCPLimits` (SEC-M14/M15). Content is never re-serialized when over the cap.
 
+#### System integration (v1.9)
+
+Puntos de entrada desde macOS sin abrir la app. Lógica pura en PastureKit; pegamento AppKit en el target Pasture.
+
+- **`IntegrationSettings`** (Kit) — namespace UserDefaults (patrón ExportSettings): `hideDockIcon`, `globalHotkeysEnabled` (default false — opt-in), `defaultPresetID`. `didChangeNotification`.
+- **`PastureURLCommand`** (Kit) — parser puro del scheme `pasture://`: `feed[?preset=]`, `new[?title=&text=]`, `search?q=`. URL no reconocido → nil (nunca ejecuta nada).
+- **`QuickCapture`** (Kit) — propuesta pura de nota (nombre ≤40 chars desde título/primera línea vía `FilenameSanitizer`; fallback timestamp determinista, clock inyectado). Destino: colección visible **`Captures/`** (distinta del `.inbox/` oculto del Memory Inbox).
+- **`HeadlessFeed`** (Kit) — ensamblado del feed sin UI: `PresetResolver` → lectura → `SecretScanner` → `ContextBuilder`. Ficheros ausentes no bloquean (se reportan); **secretos bloquean** (equivalente al default Cancel del diálogo GUI).
+- **`HeadlessActions`** (app) — pegamento: pasteboard (con auto-clear 60 s), escritura en `Captures/` (`FileLibrary.deduplicatedURL`), feedback vía `SystemNotifier` (UNUserNotificationCenter; degrada a stderr sin bundle — gotcha `swift run`).
+- **`GlobalHotkeyManager`** (app) — Carbon `RegisterEventHotKey` (sin permiso de Accesibilidad). Combos fijos v1: ⌃⌥⌘F feed / ⌃⌥⌘N captura. El callback C no captura contexto: hop a MainActor vía `DispatchQueue.main` (patrón DirectoryWatcher).
+- **`ServicesProvider`** (app) — menú Servicios "New Pasture Capture"; el selector `capturePasture` debe coincidir con `NSMessage` en Info.plist.
+- **AppDelegate** — `application(_:open:)` despacha `PastureURLCommand`; `showMainWindow()` compartido con reopen; aplica `.accessory` al arrancar si `hideDockIcon`; registra `servicesProvider`.
+- **Settings → General** — primera pestaña: login item (`SMAppService.mainApp`, exige bundle), Dock icon en vivo, toggle de hotkeys, preset por defecto del feed headless.
+- **bundle.sh** — declara `CFBundleURLTypes` + `NSServices` y firma ad-hoc (primero `pasture-mcp` anidado, luego el bundle).
+
 ### Patterns to know
 
 **Menu → View communication**: `PastureApp` posts `.openInEditor`, `.pasteFromClipboard`, and `.toggleAskMode` notifications. `ContentView` subscribes via `.onReceive`.
@@ -234,6 +249,7 @@ Closes the loop: an MCP agent can *propose* vault edits but never writes the vis
 - `MCPPathResolver.resolve` rejects any hidden path component (`.`-prefixed) — this aligns tool-path resolution with `FileLibrary`'s skip-hidden enumeration, so `.inbox/` is neither readable by path (`read_file`/`feed_context`/`resources/read`) nor a valid proposal destination. Provenance written to a promoted note is injection-safe: `FrontmatterWriter.setting` collapses a value to one line, `MCPDispatcher` sanitizes `clientInfo.name` on ingest, and `ProposalPromoter` strips the reserved frontmatter keys (`FrontmatterParser.recognizedKeys`) from the agent payload before prepending `origin: agent` — a proposal cannot spoof freshness (`review_after`/`ttl`), mislabel itself `generated`, or inject a `source:` re-import.
 - MCP `resources/read` accepts only the `pasture://` URI scheme; absolute paths and foreign schemes (`file://`, `https://`) are rejected before I/O, and the extracted relative path passes both `MCPPathResolver` layers (SEC-M1 `..` + SEC-M2 symlink). `prompts/get` renders single-pass (an argument value is never re-parsed as template syntax) and scans the rendered output with `SecretScanner`, surfacing a masked summary in `description` without blocking delivery (SEC-M8/D4). Per-argument length is capped at `maxPromptArgumentLength` (SEC-M13).
 - MCP secret warnings (`ToolCallResult.warning`) carry only the family name and file name, never the matched value. Content is delivered unchanged — the warning is informational, not a gate (SEC-M8, D4).
+- Headless feed (v1.9): secrets **block** delivery — with no dialog available, the conservative equivalent of the GUI's default-Cancel is not copying at all. The 60-second clipboard auto-clear applies to headless feeds too. Global hotkeys are opt-in (default off). `pasture://` URLs never execute anything unrecognized (parser returns nil) and captures go through `FilenameSanitizer` + `FileLibrary.deduplicatedURL` into the vault only.
 
 ### Concurrency model
 
@@ -243,4 +259,4 @@ Closes the loop: an MCP agent can *propose* vault edits but never writes the vis
 
 ## Bundle ID & versioning
 
-Bundle ID: `com.sevecod.pasture`. Current version: **1.8.0**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).
+Bundle ID: `com.sevecod.pasture`. Current version: **1.9.0**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).

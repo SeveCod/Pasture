@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="Pasture"
 BUNDLE_ID="com.sevecod.pasture"
-VERSION="1.8.0"
+VERSION="1.9.0"
 BUILD_DIR="$PROJECT_DIR/.build/release"
 OUTPUT_DIR="$PROJECT_DIR/dist"
 APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
@@ -59,9 +59,45 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
     <string>public.app-category.productivity</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 SeveCod. All rights reserved.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.sevecod.pasture</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>pasture</string>
+            </array>
+        </dict>
+    </array>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>New Pasture Capture</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>capturePasture</string>
+            <key>NSPortName</key>
+            <string>Pasture</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>NSStringPboardType</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST
+
+# v1.9 — firma ad-hoc: reduce la fricción de Gatekeeper y estabiliza permisos
+# TCC (notificaciones). El binario anidado pasture-mcp se firma primero.
+echo "Signing (ad-hoc)..."
+codesign --force -s - "$APP_BUNDLE/Contents/MacOS/pasture-mcp"
+codesign --force -s - "$APP_BUNDLE"
+codesign --verify --deep "$APP_BUNDLE" && echo "Signature OK."
 
 echo "Creating zip..."
 cd "$OUTPUT_DIR"

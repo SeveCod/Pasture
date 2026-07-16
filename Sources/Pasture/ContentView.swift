@@ -76,6 +76,12 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: SelectionPresetStore.didChangeNotification)) { _ in
             presets = SelectionPresetStore.load()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .performSearch)) { note in
+            // v1.9 — pasture://search?q=…: el debounce existente propaga a fm.searchQuery.
+            if let query = note.object as? String {
+                searchText = query
+            }
+        }
         .modifier(presetSheetsAndAlerts)
         .sheet(isPresented: $showPasteSheet) {
             NameInputSheet(title: "New file from clipboard", actionLabel: "Create") { name in

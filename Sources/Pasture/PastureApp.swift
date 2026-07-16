@@ -63,4 +63,5 @@ extension Notification.Name {
     static let toggleAskMode = Notification.Name("toggleAskMode")
     static let syncAllPacks = Notification.Name("syncAllPacks")
     static let refreshSources = Notification.Name("refreshSources")
+    static let performSearch = Notification.Name("performSearch")
 }
