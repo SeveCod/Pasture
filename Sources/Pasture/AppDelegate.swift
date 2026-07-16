@@ -3,6 +3,7 @@ import PastureKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated(unsafe) private var lockFD: Int32 = -1
+    private let servicesProvider = ServicesProvider()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let lockPath = NSTemporaryDirectory() + "com.sevecod.pasture.lock"
@@ -24,15 +25,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // v1.9 — integración de sistema: política de Dock + hotkeys globales.
+        // v1.9 — integración de sistema: política de Dock, hotkeys globales
+        // y menú Servicios.
+        let provider = servicesProvider
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
                 if IntegrationSettings.hideDockIcon() {
                     NSApplication.shared.setActivationPolicy(.accessory)
                 }
                 GlobalHotkeyManager.shared.start()
+                NSApplication.shared.servicesProvider = provider
+                NSUpdateDynamicServices()
             }
         }
+    }
+
+    /// v1.9 — dispatch del URL scheme `pasture://` (parser puro en PastureKit).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                for url in urls {
+                    guard let command = PastureURLCommand.parse(url) else { continue }
+                    switch command {
+                    case .feed(let presetName):
+                        if let presetName {
+                            HeadlessActions.feed(named: presetName)
+                        } else {
+                            HeadlessActions.feedDefaultPreset()
+                        }
+                    case .new(let title, let text):
+                        HeadlessActions.capture(text: text ?? "", title: title)
+                    case .search(let query):
+                        self.showMainWindow()
+                        NotificationCenter.default.post(name: .performSearch, object: query)
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func showMainWindow() {
+        for window in NSApplication.shared.windows where window.canBecomeMain {
+            window.makeKeyAndOrderFront(self)
+        }
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -46,12 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            for window in sender.windows where window.canBecomeMain {
-                window.makeKeyAndOrderFront(self)
-            }
-            sender.activate(ignoringOtherApps: true)
-        }
+        if !flag { showMainWindow() }
         return true
     }
 }
