@@ -101,7 +101,7 @@ struct SidebarView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.badge.exclamationmark")
-                        .foregroundStyle(Color.pastureAmber)
+                        .foregroundStyle(Color.pastureWarning(colorScheme))
                     Text("\(stale.count) note\(stale.count == 1 ? "" : "s") need review")
                         .font(.pastureStatusBar)
                         .foregroundStyle(Color.pastureTextSecondary(colorScheme))

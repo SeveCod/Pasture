@@ -81,6 +81,11 @@ extension Color {
     /// Template indicator — warm amber from the icon palette. #D4793B
     static let pastureTemplate = Color(red: 0.831, green: 0.475, blue: 0.231)
 
+    /// Template indicator — variante clara. Mismo ámbar profundo que warning:
+    /// #D4793B mide 2,91:1 sobre el fondo del badge claro (falla AA); #8F4F1A
+    /// mide ≥4,5:1 sobre todos los fondos claros de la app. #8F4F1A
+    static let pastureTemplateLight = pastureWarningLight
+
     /// Template indicator background tint. #FDF3EB (light) / #3A2E22 (dark)
     static let pastureTemplateBgLight = Color(red: 0.992, green: 0.953, blue: 0.922)
     static let pastureTemplateBgDark = Color(red: 0.227, green: 0.180, blue: 0.133)
@@ -199,6 +204,11 @@ extension Color {
     /// Warning — adapts to color scheme.
     static func pastureWarning(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? .pastureWarningDark : .pastureWarningLight
+    }
+
+    /// Template indicator — adapts to color scheme (AA en ambos esquemas).
+    static func pastureTemplate(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? .pastureTemplate : .pastureTemplateLight
     }
 
     /// Template indicator background — adapts to color scheme.

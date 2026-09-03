@@ -108,10 +108,10 @@ struct ReviewInboxSheet: View {
             if let summary = proposal.secretSummary {
                 HStack(alignment: .top, spacing: 4) {
                     Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(Color.pastureAmber)
+                        .foregroundStyle(Color.pastureWarning(colorScheme))
                     Text("Possible secrets: \(summary)")
                         .font(.caption)
-                        .foregroundStyle(Color.pastureAmber)
+                        .foregroundStyle(Color.pastureWarning(colorScheme))
                 }
             }
 

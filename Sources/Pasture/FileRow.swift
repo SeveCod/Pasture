@@ -19,7 +19,7 @@ struct FileRow: View {
                     if case .expired = file.freshness(now: Date()) {
                         Image(systemName: "clock.badge.exclamationmark")
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.pastureAmber)
+                            .foregroundStyle(Color.pastureWarning(colorScheme))
                             .help("Stale — past its review date")
                             .accessibilityLabel("Stale note, past its review date")
                     }

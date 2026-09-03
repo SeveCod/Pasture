@@ -126,7 +126,7 @@ struct TemplateSheet: View {
                         HStack(alignment: .top) {
                             Text("{{\(variable.name)}}")
                                 .font(.pastureTemplateVar)
-                                .foregroundStyle(Color.pastureTemplate)
+                                .foregroundStyle(Color.pastureTemplate(colorScheme))
                                 .frame(width: PastureLayout.templateVarLabelWidth, alignment: .trailing)
                                 .padding(.top, 4)
 

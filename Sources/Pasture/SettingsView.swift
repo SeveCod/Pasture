@@ -199,7 +199,7 @@ private struct ExportSettingsTab: View {
                 persist()
             } label: {
                 Image(systemName: defaultID == dest.wrappedValue.id ? "star.fill" : "star")
-                    .foregroundStyle(defaultID == dest.wrappedValue.id ? Color.pastureAmber : Color.pastureTextTertiary(colorScheme))
+                    .foregroundStyle(defaultID == dest.wrappedValue.id ? Color.pastureWarning(colorScheme) : Color.pastureTextTertiary(colorScheme))
             }
             .buttonStyle(.plain)
             .help(defaultID == dest.wrappedValue.id ? "Default destination" : "Set as default")
