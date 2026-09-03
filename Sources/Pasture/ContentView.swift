@@ -14,7 +14,7 @@ struct ContentView: View {
     @State private var showMergeSheet = false
     @State private var showNewCollectionSheet = false
     @State private var showDeleteConfirmation = false
-    @State private var filePendingDeletion: MDFile?
+    @State private var filesPendingDeletion: [MDFile] = []
     @State private var searchText = ""
     @State private var sortOrder: FileSortOrder = .date
     @State private var exportDestinations: [ExportDestination] = ExportSettings.loadDestinations()
@@ -35,9 +35,10 @@ struct ContentView: View {
                 activeFile: $activeFile,
                 searchText: $searchText,
                 sortOrder: $sortOrder,
-                filePendingDeletion: $filePendingDeletion,
+                filesPendingDeletion: $filesPendingDeletion,
                 showDeleteConfirmation: $showDeleteConfirmation,
-                onDrop: handleDrop
+                onDrop: handleDrop,
+                onOpenInEditor: openInExternalEditor
             )
             .navigationSplitViewColumnWidth(
                 min: PastureLayout.sidebarMinWidth,
@@ -123,11 +124,11 @@ struct ContentView: View {
         }
         .alert("Delete file?",
                isPresented: $showDeleteConfirmation,
-               presenting: filePendingDeletion) { file in
-            Button("Delete", role: .destructive) { deleteFile(file) }
-            Button("Cancel", role: .cancel) { filePendingDeletion = nil }
-        } message: { file in
-            Text("'\(file.name).md' will be moved to the Trash.")
+               presenting: filesForDeletionAlert) { files in
+            Button("Delete", role: .destructive) { deleteFiles(files) }
+            Button("Cancel", role: .cancel) { filesPendingDeletion = [] }
+        } message: { files in
+            Text(Self.deleteConfirmationMessage(for: files))
         }
         .feedChrome(feedService, fm: fm)
         .onChange(of: fm.lastError) { _, error in
@@ -328,10 +329,27 @@ struct ContentView: View {
         selectedFiles = [file]
     }
 
-    private func deleteFile(_ file: MDFile) {
-        if activeFile == file { activeFile = nil }
-        selectedFiles.remove(file)
-        fm.delete(files: [file])
+    /// Datos del alert de borrado: nil cuando no hay nada pendiente.
+    private var filesForDeletionAlert: [MDFile]? {
+        filesPendingDeletion.isEmpty ? nil : filesPendingDeletion
+    }
+
+    /// Texto del alert de borrado, en singular o plural.
+    /// Extraído del cuerpo de la vista: en línea el type-checker no lo resuelve.
+    private static func deleteConfirmationMessage(for files: [MDFile]) -> String {
+        if files.count == 1 {
+            let name: String = files[0].name
+            return "'\(name).md' will be moved to the Trash."
+        }
+        let count: Int = files.count
+        return "\(count) files will be moved to the Trash."
+    }
+
+    private func deleteFiles(_ files: [MDFile]) {
+        if let active = activeFile, files.contains(active) { activeFile = nil }
+        selectedFiles.subtract(files)
+        fm.delete(files: files)
+        filesPendingDeletion = []
     }
 
     private func executeFeed(destination: ExportDestination?) {

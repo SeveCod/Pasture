@@ -8,9 +8,10 @@ struct SidebarView: View {
     @Binding var activeFile: MDFile?
     @Binding var searchText: String
     @Binding var sortOrder: FileSortOrder
-    @Binding var filePendingDeletion: MDFile?
+    @Binding var filesPendingDeletion: [MDFile]
     @Binding var showDeleteConfirmation: Bool
     var onDrop: ([NSItemProvider]) -> Bool
+    var onOpenInEditor: (MDFile) -> Void
     @State private var collectionPendingDeletion: String?
     @State private var filePendingRename: MDFile?
     @State private var collectionPendingRename: String?
@@ -230,10 +231,10 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .onDeleteCommand {
-            if selectedFiles.count == 1, let file = selectedFiles.first {
-                filePendingDeletion = file
-                showDeleteConfirmation = true
-            }
+            guard !selectedFiles.isEmpty else { return }
+            // Se recorre `fm.files` para respetar el orden mostrado en la lista.
+            filesPendingDeletion = fm.files.filter { selectedFiles.contains($0) }
+            showDeleteConfirmation = true
         }
         .onChange(of: selectedFiles) { _, newVal in
             if newVal.count == 1 { activeFile = newVal.first }
@@ -257,6 +258,12 @@ struct SidebarView: View {
     @ViewBuilder
     private func fileContextMenu(for file: MDFile) -> some View {
         Button {
+            onOpenInEditor(file)
+        } label: {
+            Label("Open in Editor", systemImage: "square.and.pencil")
+        }
+
+        Button {
             filePendingRename = file
         } label: {
             Label("Rename\u{2026}", systemImage: "pencil")
@@ -278,7 +285,7 @@ struct SidebarView: View {
         Divider()
 
         Button(role: .destructive) {
-            filePendingDeletion = file
+            filesPendingDeletion = [file]
             showDeleteConfirmation = true
         } label: {
             Label("Delete", systemImage: "trash")
