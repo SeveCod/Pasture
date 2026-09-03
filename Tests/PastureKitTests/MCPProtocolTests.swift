@@ -59,7 +59,7 @@ import Foundation
     @Test func jsonValueExtractsStringArray() throws {
         let json = #"{"files":["a.md","b.md"]}"#
         let value = try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
-        let files = value.object?["files"]?.arrayValue?.compactMap { $0.stringValue }
+        let files = value.object?["files"]?.array?.compactMap { $0.stringValue }
         #expect(files == ["a.md", "b.md"])
     }
 

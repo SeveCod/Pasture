@@ -44,7 +44,7 @@ import Foundation
         let listLine = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
         let listJSON = try decode(listLine)
-        #expect(listJSON.object?["result"]?.object?["tools"]?.arrayValue?.count == 4)
+        #expect(listJSON.object?["result"]?.object?["tools"]?.array?.count == 4)
 
         // 4. tools/call feed_context → contexto ensamblado, isError false, framing OK.
         let callLine = try #require(dispatcher.handle(
@@ -54,7 +54,7 @@ import Foundation
         let callJSON = try decode(callLine)
         let result = callJSON.object?["result"]?.object
         #expect(result?["isError"] != nil)
-        let content = result?["content"]?.arrayValue?.first?.object?["text"]?.stringValue ?? ""
+        let content = result?["content"]?.array?.first?.object?["text"]?.stringValue ?? ""
         #expect(content.contains("<context name=\"a.md\">"))
         #expect(content.contains("{{VAR}}"))                 // crudo (D3)
         #expect(content.contains("]]]]><![CDATA[>"))         // ]]> escapado (HU-6)
@@ -89,20 +89,20 @@ import Foundation
             line: #"{"jsonrpc":"2.0","id":2,"method":"resources/list"}"#))
         #expect(!resListLine.contains("\n"))
         #expect(!resListLine.contains(#"\/"#))
-        let resources = try decode(resListLine).object?["result"]?.object?["resources"]?.arrayValue
+        let resources = try decode(resListLine).object?["result"]?.object?["resources"]?.array
         #expect(resources?.count == 2)
 
         // resources/read del fichero con {{VAR}} → contenido crudo (no renderizado).
         let readLine = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"pasture:///proyecto-X/a.md"}}"#))
-        let readText = try decode(readLine).object?["result"]?.object?["contents"]?.arrayValue?
+        let readText = try decode(readLine).object?["result"]?.object?["contents"]?.array?
             .first?.object?["text"]?.stringValue ?? ""
         #expect(readText.contains("{{VAR}}"))   // resource entrega crudo
 
         // prompts/list → a.md tiene {{VAR}} ⇒ es prompt.
         let promptsListLine = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":4,"method":"prompts/list"}"#))
-        let names = try decode(promptsListLine).object?["result"]?.object?["prompts"]?.arrayValue?
+        let names = try decode(promptsListLine).object?["result"]?.object?["prompts"]?.array?
             .compactMap { $0.object?["name"]?.stringValue } ?? []
         #expect(names.contains("proyecto-X__a"))
 
@@ -110,7 +110,7 @@ import Foundation
         let getLine = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":5,"method":"prompts/get","params":{"name":"proyecto-X__a","arguments":{"VAR":"Hola"}}}"#))
         #expect(!getLine.contains("\n"))
-        let getText = try decode(getLine).object?["result"]?.object?["messages"]?.arrayValue?
+        let getText = try decode(getLine).object?["result"]?.object?["messages"]?.array?
             .first?.object?["content"]?.object?["text"]?.stringValue ?? ""
         #expect(getText.contains("Hola"))
         #expect(!getText.contains("{{VAR}}"))   // sustituida en el render

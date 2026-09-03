@@ -418,7 +418,7 @@ public enum MCPTools {
 
     static func feedContext(arguments: JSONValue?, config: MCPServerConfig) -> ToolCallResult {
         let collection = arguments?.object?["collection"]?.stringValue
-        let fileNames = arguments?.object?["files"]?.arrayValue?.compactMap { $0.stringValue }
+        let fileNames = arguments?.object?["files"]?.array?.compactMap { $0.stringValue }
 
         let hasFiles = !(fileNames?.isEmpty ?? true)
         let hasCollection = !(collection?.isEmpty ?? true)

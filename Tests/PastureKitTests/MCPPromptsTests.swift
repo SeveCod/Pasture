@@ -33,7 +33,7 @@ import Foundation
     }
 
     private func prompt(named name: String, in json: JSONValue) -> JSONValue? {
-        json.object?["result"]?.object?["prompts"]?.arrayValue?
+        json.object?["result"]?.object?["prompts"]?.array?
             .first { $0.object?["name"]?.stringValue == name }
     }
 
@@ -44,7 +44,7 @@ import Foundation
         let line = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":1,"method":"prompts/list"}"#))
         let json = try decode(line)
-        let names = Set(json.object?["result"]?.object?["prompts"]?.arrayValue?
+        let names = Set(json.object?["result"]?.object?["prompts"]?.array?
             .compactMap { $0.object?["name"]?.stringValue } ?? [])
         #expect(names == ["greeting", "proyecto__full"])
         #expect(!names.contains("plain"))
@@ -58,7 +58,7 @@ import Foundation
             line: #"{"jsonrpc":"2.0","id":2,"method":"prompts/list"}"#))
         let json = try decode(line)
         let full = try #require(prompt(named: "proyecto__full", in: json))
-        let args = try #require(full.object?["arguments"]?.arrayValue)
+        let args = try #require(full.object?["arguments"]?.array)
         #expect(args.count == 3)
 
         func arg(_ name: String) -> [String: JSONValue]? {
@@ -86,7 +86,7 @@ import Foundation
             line: #"{"jsonrpc":"2.0","id":4,"method":"prompts/list"}"#))
         let json = try decode(line)
         let full = try #require(prompt(named: "proyecto__full", in: json))
-        let args = try #require(full.object?["arguments"]?.arrayValue)
+        let args = try #require(full.object?["arguments"]?.array)
         func required(_ name: String) -> Bool? {
             let obj = args.first { $0.object?["name"]?.stringValue == name }?.object
             if case .bool(let b)? = obj?["required"] { return b }
@@ -105,7 +105,7 @@ import Foundation
         let line = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":5,"method":"prompts/get","params":{"name":"greeting","arguments":{"NOMBRE":"Ana {{OTRA}}","TONO":""}}}"#))
         let json = try decode(line)
-        let messages = try #require(json.object?["result"]?.object?["messages"]?.arrayValue)
+        let messages = try #require(json.object?["result"]?.object?["messages"]?.array)
         #expect(messages.count == 1)
         #expect(messages.first?.object?["role"]?.stringValue == "user")
         let text = try #require(messages.first?.object?["content"]?.object?["text"]?.stringValue)
@@ -119,7 +119,7 @@ import Foundation
         let line = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":6,"method":"prompts/get","params":{"name":"proyecto__full","arguments":{"NOMBRE":"X","ITEMS":"a,b,c"}}}"#))
         let json = try decode(line)
-        let text = try #require(json.object?["result"]?.object?["messages"]?.arrayValue?
+        let text = try #require(json.object?["result"]?.object?["messages"]?.array?
             .first?.object?["content"]?.object?["text"]?.stringValue)
         #expect(text == "X formal a b c ")
     }
@@ -162,7 +162,7 @@ import Foundation
         let result = try #require(json.object?["result"]?.object)
 
         // Contenido entregado ÍNTEGRO (el secreto está en el mensaje renderizado).
-        let text = try #require(result["messages"]?.arrayValue?.first?.object?["content"]?.object?["text"]?.stringValue)
+        let text = try #require(result["messages"]?.array?.first?.object?["content"]?.object?["text"]?.stringValue)
         #expect(text == "Clave: \(syntheticKey)")
 
         // description lleva el aviso enmascarado (familia + fichero), SIN el valor.
@@ -206,7 +206,7 @@ import Foundation
         let line = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":12,"method":"prompts/list"}"#))
         let json = try decode(line)
-        let matches = json.object?["result"]?.object?["prompts"]?.arrayValue?
+        let matches = json.object?["result"]?.object?["prompts"]?.array?
             .filter { $0.object?["name"]?.stringValue == "a__b" } ?? []
         #expect(matches.count == 1)   // solo uno, el segundo se descartó
     }

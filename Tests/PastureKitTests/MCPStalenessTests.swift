@@ -48,7 +48,7 @@ import Foundation
         #expect(warning.contains("stale"))
         #expect(warning.contains("since last review"))
         // Contenido entregado íntegro (incluye el frontmatter en v1).
-        let content = result["content"]?.arrayValue?.first?.object?["text"]?.stringValue ?? ""
+        let content = result["content"]?.array?.first?.object?["text"]?.stringValue ?? ""
         #expect(content.contains("contenido viejo"))
     }
 
