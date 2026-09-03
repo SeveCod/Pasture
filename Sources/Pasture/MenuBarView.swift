@@ -25,10 +25,6 @@ struct MenuBarView: View {
         return fm.files.filter { selectedFiles.contains($0) }
     }
 
-    private var totalTokens: Int {
-        fm.totalTokens(for: feedTargets)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -40,15 +36,7 @@ struct MenuBarView: View {
             footer
         }
         .frame(width: 320)
-        .overlay(alignment: .bottom) { feedbackOverlay }
-        .sheet(isPresented: $feedService.showTemplateSheet) {
-            TemplateSheet(
-                variables: $feedService.templateVariables,
-                totalTokens: totalTokens,
-                onCancel: { feedService.cancelTemplateFeed() },
-                onConfirm: { feedService.confirmTemplateFeed(fm: fm) }
-            )
-        }
+        .feedChrome(feedService, fm: fm)
         .onReceive(NotificationCenter.default.publisher(for: ExportSettings.didChangeNotification)) { _ in
             exportDestinations = ExportSettings.loadDestinations()
         }
@@ -57,19 +45,6 @@ struct MenuBarView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: PackStore.didChangeNotification)) { _ in
             hasPacks = !PackStore.load().isEmpty
-        }
-        .alert(
-            "Possible secret detected",
-            isPresented: Binding(
-                get: { feedService.pendingSecretResult != nil },
-                set: { if !$0 { feedService.cancelSecretDialog() } }
-            ),
-            presenting: feedService.pendingSecretResult
-        ) { _ in
-            Button("Cancel", role: .cancel) { feedService.cancelSecretDialog() }
-            Button("Continue anyway", role: .destructive) { feedService.proceedDespiteSecrets() }
-        } message: { result in
-            Text(result.alertMessage)
         }
     }
 
@@ -247,15 +222,6 @@ struct MenuBarView: View {
             feedService.showFeedback("Applied '\(preset.name)' — \(missing)")
         } else {
             feedService.showFeedback("Applied '\(preset.name)'")
-        }
-    }
-
-    // MARK: - Feedback
-
-    @ViewBuilder
-    private var feedbackOverlay: some View {
-        if let msg = feedService.feedbackMessage {
-            FeedbackToast(message: msg, isError: feedService.feedbackIsError)
         }
     }
 }
