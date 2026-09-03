@@ -153,7 +153,10 @@ struct ReviewInboxSheet: View {
 
             HStack {
                 Spacer()
-                Button("Reject", role: .destructive) { proposalPendingRejection = proposal }
+                Button("Reject", role: .destructive) {
+                    successMessage = nil
+                    proposalPendingRejection = proposal
+                }
                     .controlSize(.small)
                 Button("Approve") { apply(proposal, overrideChangedTarget: false) }
                     .controlSize(.small)
@@ -227,6 +230,9 @@ struct ReviewInboxSheet: View {
     }
 
     private func apply(_ proposal: Proposal, overrideChangedTarget: Bool) {
+        // Un "Promoted to X" de la propuesta anterior aquí sería feedback engañoso:
+        // se retira en cuanto se actúa sobre otra.
+        successMessage = nil
         switch fm.promote(proposal, overrideChangedTarget: overrideChangedTarget) {
         case .success(let url):
             // La lista se refresca vía @Published pendingProposals; el aviso deja
