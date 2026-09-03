@@ -167,7 +167,10 @@ struct ReviewInboxSheet: View {
                         .foregroundStyle(Color.pastureTextPrimary(colorScheme))
                 }
             }
-            .font(.system(.caption, design: .monospaced))
+            // A11Y-10: relativa pero a `.callout` (12 pt en macOS, el tamaño previo
+            // exacto): este diff se lee antes de aprobar una escritura de agente,
+            // así que no puede perder legibilidad al hacerse escalable.
+            .font(.system(.callout, design: .monospaced))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }

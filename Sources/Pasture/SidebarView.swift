@@ -333,11 +333,11 @@ struct SidebarView: View {
             HStack(spacing: 4) {
                 if limit.exceeds {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(.caption2, weight: .semibold))
                         .accessibilityHidden(true)
                 } else {
                     Image(systemName: "number")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(.caption2, weight: .semibold))
                         .accessibilityHidden(true)
                 }
                 Text(tokenSummaryText(totalTokens: totalTokens, contextWindow: limit.contextWindow))
