@@ -292,13 +292,16 @@ struct ContentView: View {
             if !presets.isEmpty {
                 Divider()
                 ForEach(presets) { preset in
+                    // UX-6: el clic en el nombre aplica el preset (como en la barra
+                    // de menús); la gestión queda en el menú de mantenido.
                     Menu(preset.name) {
-                        Button("Apply") { applyPreset(preset) }
                         Button("Rename\u{2026}") { presetPendingRename = preset }
                         Divider()
                         Button("Delete\u{2026}", role: .destructive) {
                             presetPendingDeletion = preset
                         }
+                    } primaryAction: {
+                        applyPreset(preset)
                     }
                 }
             }

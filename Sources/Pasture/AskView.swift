@@ -12,6 +12,7 @@ struct AskView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("askPrivacyNoticeAccepted") private var privacyNoticeAccepted = false
     @State private var showPrivacyNotice = false
+    @State private var showClearConfirmation = false
 
     private var contextTokens: Int { fm.totalTokens(for: feedTargets) }
 
@@ -409,14 +410,28 @@ struct AskView: View {
             }
 
             if viewModel.hasConversation || viewModel.error != nil {
-                Button(action: viewModel.clear) {
-                    Image(systemName: "arrow.counterclockwise")
+                // UX-8: destructivo y sin deshacer — se confirma solo cuando hay
+                // conversación real que perder (2+ mensajes).
+                Button {
+                    if viewModel.conversation.messages.count >= 2 {
+                        showClearConfirmation = true
+                    } else {
+                        viewModel.clear()
+                    }
+                } label: {
+                    Image(systemName: "trash")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                 }
                 .buttonStyle(.plain)
                 .help("Clear conversation")
                 .accessibilityLabel("Clear conversation")
+                .alert("Clear conversation?", isPresented: $showClearConfirmation) {
+                    Button("Clear", role: .destructive) { viewModel.clear() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This discards the current conversation. It cannot be undone.")
+                }
             }
         }
         .padding(PastureLayout.askInputPadding)

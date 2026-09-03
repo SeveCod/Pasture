@@ -14,6 +14,22 @@ struct FeedButton: View {
     private var feedLabel: String { "Feed \(TokenEstimator.formatted(totalTokens))" }
     private var feedAccessibilityLabel: String { "\(feedLabel) tokens" }
 
+    /// UX-7: fuente única del destino del clic — la acción primaria y el tooltip
+    /// leen de aquí, para que el tooltip no pueda mentir sobre qué hará el clic.
+    private var defaultDestination: ExportDestination? {
+        guard let defaultID = ExportSettings.defaultDestinationID() else { return nil }
+        return destinations.first(where: { $0.id == defaultID })
+    }
+
+    /// Sin destino con estrella el clic copia al portapapeles, igual que la
+    /// variante sin destinos configurados.
+    private var menuHelpText: String {
+        if let dest = defaultDestination {
+            return "Feed \u{2192} \(dest.name) (hold for more options)"
+        }
+        return "Feed \u{2192} clipboard (hold for more options)"
+    }
+
     var body: some View {
         let isDisabled = targets.isEmpty
 
@@ -24,7 +40,7 @@ struct FeedButton: View {
             .buttonStyle(.plain)
             .onHover { hovering in hover = hovering }
             .disabled(isDisabled)
-            .help("Copy wrapped in <context> tags for Claude")
+            .help("Feed \u{2192} clipboard")
         } else {
             Menu {
                 Button("Copy to Clipboard") { onClipboard() }
@@ -35,8 +51,7 @@ struct FeedButton: View {
             } label: {
                 buttonLabel(isDisabled: isDisabled)
             } primaryAction: {
-                if let defaultID = ExportSettings.defaultDestinationID(),
-                   let dest = destinations.first(where: { $0.id == defaultID }) {
+                if let dest = defaultDestination {
                     onExport(dest)
                 } else {
                     onClipboard()
@@ -45,7 +60,7 @@ struct FeedButton: View {
             .menuStyle(.borderlessButton)
             .onHover { hovering in hover = hovering }
             .disabled(isDisabled)
-            .help("Feed: click for default, hold for options")
+            .help(menuHelpText)
         }
     }
 
