@@ -88,6 +88,9 @@ final class AskViewModel: ObservableObject {
                 AccessibilityNotification.Announcement("Response complete").post()
             } catch is CancellationError {
                 conversation.endInterruptedAssistant()
+                // El botón Stop no deja rastro audible: sin esto, quien usa VoiceOver
+                // no recibe confirmación de que el streaming se detuvo.
+                AccessibilityNotification.Announcement("Response stopped").post()
             } catch let clientError as AIClientError {
                 conversation.endInterruptedAssistant()
                 error = clientError
