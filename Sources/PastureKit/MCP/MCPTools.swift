@@ -161,26 +161,13 @@ public enum MCPTools {
             return .failure("ruta fuera del vault")
         }
 
-        let inbox = inboxRoot(config)
-        if ProposalStore.pendingCount(inboxRoot: inbox) >= MCPLimits.maxPendingProposals {
-            return .failure("bandeja de propuestas llena (máximo \(MCPLimits.maxPendingProposals))")
+        return queueProposal(
+            scanName: filename, content: content, config: config,
+            successMessage: "Proposal queued in review inbox (awaiting human approval): \(filename)"
+        ) { summary in
+            Proposal.note(filename: filename, collection: collection, content: content,
+                          proposedBy: proposedBy, secretSummary: summary)
         }
-
-        let summary = secretSummary(fileName: filename, content: content)
-        let proposal = Proposal.note(filename: filename, collection: collection, content: content,
-                                     proposedBy: proposedBy, secretSummary: summary)
-        if ProposalStore.contains(payloadHash: proposal.payloadHash,
-                                  destinationKey: proposal.destinationKey, inboxRoot: inbox) {
-            return .failure("propuesta duplicada (mismo contenido y destino)")
-        }
-
-        do {
-            try ProposalStore.save(proposal, payload: content, inboxRoot: inbox)
-        } catch {
-            return .failure("no se pudo guardar la propuesta")
-        }
-        return .ok("Proposal queued in review inbox (awaiting human approval): \(filename)",
-                   warning: proposalSecretWarning(summary))
     }
 
     /// `propose_append`: encola un añadido a un fichero EXISTENTE. El destino debe
@@ -212,15 +199,30 @@ public enum MCPTools {
             return .failure("el fichero destino no existe")
         }
 
+        return queueProposal(
+            scanName: resolved.lastPathComponent, content: content, config: config,
+            successMessage: "Append proposal queued in review inbox (awaiting human approval): \(path)"
+        ) { summary in
+            Proposal.append(relativePath: path, content: content,
+                            targetHash: SyncMarker.sha256(current),
+                            proposedBy: proposedBy, secretSummary: summary)
+        }
+    }
+
+    /// Secuencia común de encolado de las dos tools de propuesta, a partir del punto
+    /// en que el destino ya está validado (esa validación difiere y se queda en cada
+    /// tool). Orden fijado por los tests: cap de pendientes (SEC-M15) → escaneo de
+    /// secretos → construcción de la propuesta → dedupe → guardado → mensaje de éxito.
+    private static func queueProposal(scanName: String, content: String,
+                                      config: MCPServerConfig, successMessage: String,
+                                      makeProposal: (String?) -> Proposal) -> ToolCallResult {
         let inbox = inboxRoot(config)
         if ProposalStore.pendingCount(inboxRoot: inbox) >= MCPLimits.maxPendingProposals {
             return .failure("bandeja de propuestas llena (máximo \(MCPLimits.maxPendingProposals))")
         }
 
-        let summary = secretSummary(fileName: resolved.lastPathComponent, content: content)
-        let proposal = Proposal.append(relativePath: path, content: content,
-                                       targetHash: SyncMarker.sha256(current),
-                                       proposedBy: proposedBy, secretSummary: summary)
+        let summary = secretSummary(fileName: scanName, content: content)
+        let proposal = makeProposal(summary)
         if ProposalStore.contains(payloadHash: proposal.payloadHash,
                                   destinationKey: proposal.destinationKey, inboxRoot: inbox) {
             return .failure("propuesta duplicada (mismo contenido y destino)")
@@ -231,8 +233,7 @@ public enum MCPTools {
         } catch {
             return .failure("no se pudo guardar la propuesta")
         }
-        return .ok("Append proposal queued in review inbox (awaiting human approval): \(path)",
-                   warning: proposalSecretWarning(summary))
+        return .ok(successMessage, warning: proposalSecretWarning(summary))
     }
 
     /// Resumen enmascarado de secretos del payload (familia + fichero), o `nil`.
