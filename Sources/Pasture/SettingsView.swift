@@ -32,6 +32,7 @@ private struct GeneralSettingsTab: View {
     @State private var defaultPresetID: UUID? = IntegrationSettings.defaultPresetID()
     @State private var loginItemError: String?
     @State private var notificationsDenied = false
+    @State private var hotkeyError: String?
 
     /// SMAppService exige app empaquetada (falla bajo `swift run`).
     private var isBundled: Bool { Bundle.main.bundleURL.pathExtension == "app" }
@@ -72,6 +73,11 @@ private struct GeneralSettingsTab: View {
                             notificationsDenied = await SystemNotifier.isDenied()
                         }
                     }
+                if hotkeysEnabled, let hotkeyError {
+                    Text(hotkeyError)
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureError(colorScheme))
+                }
                 if hotkeysEnabled && notificationsDenied {
                     Text("Notifications are disabled for Pasture — hotkey feedback will be silent. Enable them in System Settings → Notifications.")
                         .font(.caption)
@@ -107,12 +113,16 @@ private struct GeneralSettingsTab: View {
         .onAppear {
             if isBundled { launchAtLogin = SMAppService.mainApp.status == .enabled }
             presets = SelectionPresetStore.load()
+            hotkeyError = GlobalHotkeyManager.shared.registrationError
         }
         .task {
             notificationsDenied = await SystemNotifier.isDenied()
         }
         .onReceive(NotificationCenter.default.publisher(for: SelectionPresetStore.didChangeNotification)) { _ in
             presets = SelectionPresetStore.load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: GlobalHotkeyManager.registrationDidChangeNotification)) { _ in
+            hotkeyError = GlobalHotkeyManager.shared.registrationError
         }
     }
 
