@@ -18,8 +18,7 @@ enum SystemNotifier {
             FileHandle.standardError.write(Data("[Pasture] \(title): \(body)\n".utf8))
             return
         }
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else {
                 // Sin permiso, el aviso moriría en silencio: al menos un beep y stderr,
                 // que para "feed cancelled by secret" es la diferencia entre saberlo y no.
@@ -31,7 +30,9 @@ enum SystemNotifier {
             content.title = title
             content.body = body
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            center.add(request)
+            // El centro se pide dentro de la closure: capturarlo la haría retener un
+            // UNUserNotificationCenter (no Sendable) en un contexto @Sendable.
+            UNUserNotificationCenter.current().add(request)
         }
     }
 
