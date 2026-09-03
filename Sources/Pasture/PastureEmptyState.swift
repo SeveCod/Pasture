@@ -15,7 +15,7 @@ struct PastureEmptyState: View {
             HStack(spacing: 8) {
                 Circle().fill(Color.pastureGrassDark).frame(width: 4, height: 4)
                 Circle().fill(Color.pastureGrassMedium).frame(width: 4, height: 4)
-                Circle().fill(Color.pastureGrassOrange).frame(width: 4, height: 4)
+                Circle().fill(Color.pastureTemplate).frame(width: 4, height: 4)
             }
             .padding(.bottom, 4)
 

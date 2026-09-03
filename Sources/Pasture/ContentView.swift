@@ -365,9 +365,8 @@ struct ContentView: View {
             feedService.showFeedback("No selection to save", isError: true)
             return
         }
-        if let existing = SelectionPresetStore.preset(named: name) {
+        if SelectionPresetStore.preset(named: name) != nil {
             // HU-4: confirmar sobrescritura de un nombre duplicado.
-            _ = existing
             presetOverwritePending = (name: name, paths: paths)
             return
         }
