@@ -176,7 +176,7 @@ struct ContentView: View {
             let targets = feedTargets
 
             Button { showNewFileSheet = true } label: {
-                Label("New File", systemImage: "square.and.pencil")
+                Label("New File", systemImage: "doc.badge.plus")
             }
             .help("Create a new empty note")
             .accessibilityLabel("New file")

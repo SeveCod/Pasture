@@ -43,11 +43,14 @@ struct ReviewInboxSheet: View {
 
             if let successMessage {
                 HStack(spacing: 6) {
+                    // El icono es decorativo: VoiceOver lo leía como contenido.
                     Image(systemName: "checkmark.circle")
+                        .accessibilityHidden(true)
                     Text(successMessage)
                         .font(.caption)
                     Spacer()
                 }
+                .accessibilityElement(children: .combine)
                 .foregroundStyle(Color.pastureSuccess(colorScheme))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)

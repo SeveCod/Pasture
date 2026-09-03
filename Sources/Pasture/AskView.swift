@@ -47,8 +47,8 @@ struct AskView: View {
         let base = "Approximately \(TokenEstimator.formatted(contextTokens)) of "
             + "\(TokenEstimator.formatted(viewModel.resolvedModel.contextWindow)) tokens used"
         switch contextUsageLevel {
-        case .red:    return base + " — above 80 % of the context window"
-        case .amber:  return base + " — above 50 % of the context window"
+        case .red:    return base + " — above 80% of the context window"
+        case .amber:  return base + " — above 50% of the context window"
         case .normal: return base
         }
     }
