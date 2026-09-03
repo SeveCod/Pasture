@@ -76,6 +76,23 @@ struct MenuBarView: View {
                 .accessibilityHint("Opens a menu of saved presets")
             }
 
+            // UX-4: el Memory Inbox era invisible desde la barra de menús y las
+            // propuestas caducan a los 14 días. El badge lleva a la ventana
+            // principal, donde vive la bandeja de revisión.
+            if !fm.pendingProposals.isEmpty {
+                Button {
+                    openWindow(id: "main")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                } label: {
+                    Label("\(fm.pendingProposals.count)", systemImage: "tray.and.arrow.down")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.pastureWarning(colorScheme))
+                }
+                .buttonStyle(.plain)
+                .help("Proposals pending review")
+                .accessibilityLabel("Review inbox, \(fm.pendingProposals.count) proposals pending")
+            }
+
             if hasPacks {
                 Button {
                     syncAllPacks()
