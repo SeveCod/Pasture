@@ -135,7 +135,7 @@ struct ContentView: View {
             Button("Continue anyway", role: .destructive) { feedService.proceedDespiteSecrets() }
         } message: { result in
             // SEC-4: solo fichero + tipo, nunca el valor. SEC-5: "known", sin garantía.
-            Text(secretAlertMessage(for: result))
+            Text(result.alertMessage)
         }
         .overlay(alignment: .bottom) { feedbackOverlay }
         .animation(.easeInOut(duration: PastureEffects.animationStandard), value: feedService.feedbackMessage)
@@ -395,18 +395,6 @@ struct ContentView: View {
         } else {
             feedService.showFeedback("Applied '\(preset.name)'")
         }
-    }
-
-    /// Mensaje del aviso de secretos. SEC-4 (sin valores) + SEC-5 (best-effort).
-    private func secretAlertMessage(for result: SecretScanResult) -> String {
-        let detections = result.summaryLines().joined(separator: "\n")
-        return """
-        Pasture found patterns that look like known credentials:
-
-        \(detections)
-
-        This is a best-effort check for known secret types — it is not a guarantee. Review before sending.
-        """
     }
 
     private func importFromDisk() {
