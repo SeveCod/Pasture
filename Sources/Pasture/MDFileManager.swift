@@ -292,7 +292,7 @@ final class MDFileManager: ObservableObject {
         for file in toDelete {
             guard Self.isInsidePasture(file.url) else { continue }
             do {
-                try FileManager.default.removeItem(at: file.url)
+                try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
                 deletedURLs.insert(file.url)
             } catch {
                 lastError = "Failed to delete \(file.name): \(error.localizedDescription)"
@@ -382,7 +382,7 @@ final class MDFileManager: ObservableObject {
         }
 
         do {
-            try FileManager.default.removeItem(at: collectionURL)
+            try FileManager.default.trashItem(at: collectionURL, resultingItemURL: nil)
             refreshCollections()
             watcher.updateSubdirectories(names: collections, under: Self.pastureDir)
         } catch {

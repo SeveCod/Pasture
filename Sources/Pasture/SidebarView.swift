@@ -43,7 +43,7 @@ struct SidebarView: View {
             Button("Delete", role: .destructive) { fm.deleteCollection(name) }
             Button("Cancel", role: .cancel) { collectionPendingDeletion = nil }
         } message: { name in
-            Text("The empty collection '\(name)' will be deleted.")
+            Text("The empty collection '\(name)' will be moved to the Trash.")
         }
         .sheet(item: $filePendingRename) { file in
             NameInputSheet(title: "Rename '\(file.name)'", actionLabel: "Rename", initialName: file.name) { newName in

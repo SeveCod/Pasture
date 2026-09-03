@@ -112,7 +112,7 @@ struct ContentView: View {
             Button("Delete", role: .destructive) { deleteFile(file) }
             Button("Cancel", role: .cancel) { filePendingDeletion = nil }
         } message: { file in
-            Text("'\(file.name).md' will be permanently deleted.")
+            Text("'\(file.name).md' will be moved to the Trash.")
         }
         .feedChrome(feedService, fm: fm)
         .onChange(of: fm.lastError) { _, error in
