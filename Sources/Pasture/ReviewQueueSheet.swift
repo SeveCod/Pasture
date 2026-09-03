@@ -15,8 +15,10 @@ struct ReviewQueueSheet: View {
                 Text("Review queue")
                     .font(.pastureSheetHeading)
                 Spacer()
+                // A11Y-6: sheet de solo-cierre — Escape sale. El único otro
+                // control de la lista ("Mark reviewed") no reclama atajo.
                 Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(12)
             Divider()

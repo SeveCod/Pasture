@@ -27,8 +27,11 @@ struct ReviewInboxSheet: View {
                 Text("Review inbox")
                     .font(.pastureSheetHeading)
                 Spacer()
+                // A11Y-6: Escape cierra la bandeja. Approve/Reject siguen sin
+                // atajo (`.none` explícito) para que una tecla no promocione
+                // una propuesta sin intención.
                 Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(12)
             Divider()
@@ -146,10 +149,19 @@ struct ReviewInboxSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
                 if proposal.kind == .append, let current = fm.appendTargetContent(proposal) {
+                    // A11Y-7: encabezados textuales — el diff no puede depender
+                    // solo del color para distinguir lo actual de lo propuesto.
+                    Text("Current content")
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                     Text(truncated(current))
                         .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+                    Text("Proposed addition")
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                     Text(payload)
                         .foregroundStyle(Color.pastureSuccess(colorScheme))
+                        .accessibilityLabel("Proposed addition: \(payload)")
                 } else {
                     Text(payload)
                         .foregroundStyle(Color.pastureTextPrimary(colorScheme))

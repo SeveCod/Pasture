@@ -19,14 +19,37 @@ struct AskView: View {
         viewModel.resolvedModel.provider == .anthropic ? "Anthropic" : "OpenRouter"
     }
 
+    private enum ContextUsageLevel { case normal, amber, red }
+
     /// Green below 50% of the model's context window, amber up to 80%, red above.
-    private var contextUsageColor: Color {
+    /// Fuente única de los umbrales: el color y la etiqueta de accesibilidad
+    /// (A11Y-9) leen de aquí, para que no puedan desalinearse.
+    private var contextUsageLevel: ContextUsageLevel {
         let window = viewModel.resolvedModel.contextWindow
-        guard window > 0 else { return Color.pastureTokenBadgeText(colorScheme) }
+        guard window > 0 else { return .normal }
         let ratio = Double(contextTokens) / Double(window)
-        if ratio > 0.8 { return Color.pastureError(colorScheme) }
-        if ratio > 0.5 { return Color.pastureWarning(colorScheme) }
-        return Color.pastureTokenBadgeText(colorScheme)
+        if ratio > 0.8 { return .red }
+        if ratio > 0.5 { return .amber }
+        return .normal
+    }
+
+    private var contextUsageColor: Color {
+        switch contextUsageLevel {
+        case .red:    return Color.pastureError(colorScheme)
+        case .amber:  return Color.pastureWarning(colorScheme)
+        case .normal: return Color.pastureTokenBadgeText(colorScheme)
+        }
+    }
+
+    /// A11Y-9: el nivel de uso no puede ir solo en el color — se dice en texto.
+    private var contextUsageAccessibilityLabel: String {
+        let base = "Approximately \(TokenEstimator.formatted(contextTokens)) of "
+            + "\(TokenEstimator.formatted(viewModel.resolvedModel.contextWindow)) tokens used"
+        switch contextUsageLevel {
+        case .red:    return base + " — above 80 % of the context window"
+        case .amber:  return base + " — above 50 % of the context window"
+        case .normal: return base
+        }
     }
 
     var body: some View {
@@ -71,7 +94,7 @@ struct AskView: View {
                 .font(.pastureTokenCount)
                 .foregroundStyle(contextUsageColor)
                 .help("Estimated context size vs. the model's context window")
-                .accessibilityLabel("Approximately \(TokenEstimator.formatted(contextTokens)) of \(TokenEstimator.formatted(viewModel.resolvedModel.contextWindow)) tokens used")
+                .accessibilityLabel(contextUsageAccessibilityLabel)
 
             Spacer()
 

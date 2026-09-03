@@ -115,6 +115,10 @@ struct TemplateSheet: View {
     let onCancel: () -> Void
     let onConfirm: () -> Void
 
+    /// A11Y-5: el foco entra en el primer campo al abrir el sheet, para no
+    /// obligar a tabular desde el principio (mismo patrón que `NameInputSheet`).
+    @FocusState private var focusedVariable: TemplateVariable.ID?
+
     var body: some View {
         VStack(spacing: PastureLayout.sheetSpacing) {
             Text("Fill template variables")
@@ -142,6 +146,8 @@ struct TemplateSheet: View {
                                 )
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: PastureLayout.templateVarInputWidth)
+                                .focused($focusedVariable, equals: variable.id)
+                                .accessibilityLabel("Value for \(variable.name)")
 
                                 if variable.kind == .list && !variable.value.isEmpty {
                                     Text("\(variable.listItems.count) items")
@@ -183,5 +189,6 @@ struct TemplateSheet: View {
         }
         .padding(PastureLayout.sheetPadding)
         .frame(minWidth: PastureLayout.templateSheetMinWidth)
+        .onAppear { focusedVariable = variables.first?.id }
     }
 }
