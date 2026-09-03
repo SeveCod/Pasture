@@ -274,8 +274,9 @@ extension Font {
     static let pastureTokenBadge: Font = .system(.caption, design: .monospaced, weight: .semibold)
 
     // Editor
-    /// Editor text — monospaced for markdown editing. 13pt base.
-    static let pastureEditor: Font = .system(size: 13, weight: .regular, design: .monospaced)
+    /// Editor text — monospaced for markdown editing. Relativa a `.body`
+    /// (13 pt por defecto en macOS) para que escale con Tamaño de Texto Dinámico.
+    static let pastureEditor: Font = .system(.body, design: .monospaced, weight: .regular)
 
     // Status bar
     /// Status bar labels. Small and unobtrusive.

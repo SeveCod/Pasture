@@ -269,6 +269,7 @@ struct AskView: View {
                 .font(.system(size: PastureLayout.emptyStateIconSize))
                 .foregroundStyle(LinearGradient.pastureBrand)
                 .padding(.bottom, 4)
+                .accessibilityHidden(true)
 
             Text("Ask your context")
                 .font(.pastureEmptyHeading)

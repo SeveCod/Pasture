@@ -167,7 +167,7 @@ struct ReviewInboxSheet: View {
                         .foregroundStyle(Color.pastureTextPrimary(colorScheme))
                 }
             }
-            .font(.system(size: 12, design: .monospaced))
+            .font(.system(.caption, design: .monospaced))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }

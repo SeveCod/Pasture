@@ -78,7 +78,7 @@ struct SidebarView: View {
                         .foregroundStyle(Color.pastureTextSecondary(colorScheme))
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9))
+                        .font(.caption2)
                         .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                 }
                 .padding(.horizontal, PastureLayout.searchBarHPadding)
@@ -107,7 +107,7 @@ struct SidebarView: View {
                         .foregroundStyle(Color.pastureTextSecondary(colorScheme))
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9))
+                        .font(.caption2)
                         .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                 }
                 .padding(.horizontal, PastureLayout.searchBarHPadding)

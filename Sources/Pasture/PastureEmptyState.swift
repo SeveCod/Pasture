@@ -11,6 +11,7 @@ struct PastureEmptyState: View {
                 .foregroundStyle(LinearGradient.pastureBrand)
                 .rotationEffect(.degrees(-15))
                 .padding(.bottom, 4)
+                .accessibilityHidden(true)
 
             HStack(spacing: 8) {
                 Circle().fill(Color.pastureGrassDark).frame(width: 4, height: 4)
