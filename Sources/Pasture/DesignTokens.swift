@@ -86,9 +86,11 @@ extension Color {
     /// mide ≥4,5:1 sobre todos los fondos claros de la app. #8F4F1A
     static let pastureTemplateLight = pastureWarningLight
 
-    /// Template indicator background tint. #FDF3EB (light) / #3A2E22 (dark)
+    /// Template indicator background tint. #FDF3EB (light) / #2E251B (dark).
+    /// El tinte oscuro se oscureció desde #3A2E22 (A11Y-1): el ámbar del badge
+    /// #D4793B medía 4,15:1 encima, por debajo de AA. Sobre #2E251B mide 4,73:1.
     static let pastureTemplateBgLight = Color(red: 0.992, green: 0.953, blue: 0.922)
-    static let pastureTemplateBgDark = Color(red: 0.227, green: 0.180, blue: 0.133)
+    static let pastureTemplateBgDark = Color(red: 0.182, green: 0.144, blue: 0.106)
 
     /// Selection/highlight in sidebar — warm sage tint. #E2EDDF (light) / #2E3E2C (dark)
     static let pastureSelectionLight = Color(red: 0.886, green: 0.929, blue: 0.875)
