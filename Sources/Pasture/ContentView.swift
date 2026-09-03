@@ -9,6 +9,7 @@ struct ContentView: View {
     @EnvironmentObject private var fm: MDFileManager
     @State private var selectedFiles: Set<MDFile> = []
     @State private var activeFile: MDFile?
+    @State private var showNewFileSheet = false
     @State private var showPasteSheet = false
     @State private var showMergeSheet = false
     @State private var showNewCollectionSheet = false
@@ -47,6 +48,9 @@ struct ContentView: View {
             editorPanel
         }
         .toolbar { toolbarContent }
+        .onReceive(NotificationCenter.default.publisher(for: .newFile)) { _ in
+            showNewFileSheet = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pasteFromClipboard)) { _ in
             showPasteSheet = true
         }
@@ -83,6 +87,16 @@ struct ContentView: View {
             }
         }
         .modifier(presetSheetsAndAlerts)
+        .sheet(isPresented: $showNewFileSheet) {
+            NameInputSheet(title: "New file", actionLabel: "Create") { name in
+                // Los fallos de `create` llegan al usuario por `fm.lastError`.
+                if let created = fm.create(name: name, content: "") {
+                    selectFile(created)
+                    // `created.name` y no `name`: la deduplicación puede haberlo cambiado.
+                    feedService.showFeedback("Created '\(created.name).md'")
+                }
+            }
+        }
         .sheet(isPresented: $showPasteSheet) {
             NameInputSheet(title: "New file from clipboard", actionLabel: "Create") { name in
                 let content = NSPasteboard.general.string(forType: .string) ?? ""
@@ -158,6 +172,12 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             let targets = feedTargets
+
+            Button { showNewFileSheet = true } label: {
+                Label("New File", systemImage: "square.and.pencil")
+            }
+            .help("Create a new empty note")
+            .accessibilityLabel("New file")
 
             Button { showNewCollectionSheet = true } label: {
                 Label("New Collection", systemImage: "folder.badge.plus")

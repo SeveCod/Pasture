@@ -13,7 +13,12 @@ struct PastureApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .newItem) {
+                Button("New File") {
+                    NotificationCenter.default.post(name: .newFile, object: nil)
+                }
+                .keyboardShortcut("n")
+            }
             CommandMenu("File") {
                 Button("Open in Default Editor") {
                     NotificationCenter.default.post(name: .openInEditor, object: nil)
@@ -58,6 +63,7 @@ struct PastureApp: App {
 }
 
 extension Notification.Name {
+    static let newFile = Notification.Name("newFile")
     static let pasteFromClipboard = Notification.Name("pasteFromClipboard")
     static let openInEditor = Notification.Name("openInEditor")
     static let toggleAskMode = Notification.Name("toggleAskMode")
