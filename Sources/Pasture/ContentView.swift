@@ -89,8 +89,9 @@ struct ContentView: View {
         .modifier(presetSheetsAndAlerts)
         .sheet(isPresented: $showNewFileSheet) {
             NameInputSheet(title: "New file", actionLabel: "Create") { name in
+                // Nace en la colección activa, igual que una nota pegada.
                 // Los fallos de `create` llegan al usuario por `fm.lastError`.
-                if let created = fm.create(name: name, content: "") {
+                if let created = fm.create(name: name, content: "", collection: activeFile?.collection) {
                     selectFile(created)
                     // `created.name` y no `name`: la deduplicación puede haberlo cambiado.
                     feedService.showFeedback("Created '\(created.name).md'")
