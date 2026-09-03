@@ -122,7 +122,7 @@ struct ContentView: View {
                 }
             }
         }
-        .alert("Delete file?",
+        .alert(deleteAlertTitle,
                isPresented: $showDeleteConfirmation,
                presenting: filesForDeletionAlert) { files in
             Button("Delete", role: .destructive) { deleteFiles(files) }
@@ -332,6 +332,13 @@ struct ContentView: View {
     /// Datos del alert de borrado: nil cuando no hay nada pendiente.
     private var filesForDeletionAlert: [MDFile]? {
         filesPendingDeletion.isEmpty ? nil : filesPendingDeletion
+    }
+
+    /// Título del alert de borrado, en singular o plural. Se lee del estado y no del
+    /// parámetro del closure: el título se evalúa al construir el cuerpo de la vista.
+    private var deleteAlertTitle: String {
+        let count: Int = filesPendingDeletion.count
+        return count > 1 ? "Delete \(count) files?" : "Delete file?"
     }
 
     /// Texto del alert de borrado, en singular o plural.
