@@ -9,6 +9,7 @@ struct FeedButton: View {
     let onClipboard: () -> Void
     let onExport: (ExportDestination) -> Void
     @State private var hover = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var feedLabel: String { "Feed \(TokenEstimator.formatted(totalTokens))" }
     private var feedAccessibilityLabel: String { "\(feedLabel) tokens" }
@@ -98,8 +99,10 @@ struct FeedButton: View {
                 : AnyShapeStyle(hover ? LinearGradient.pastureFeedButtonHover : LinearGradient.pastureFeedButton)
         )
         .clipShape(RoundedRectangle(cornerRadius: PastureLayout.feedButtonRadius))
-        .scaleEffect(hover && !isDisabled ? 1.02 : 1.0)
-        .animation(.easeInOut(duration: PastureEffects.animationQuick), value: hover)
+        // A11Y-4: con Reduce Motion se omite el escalado del hover; el cambio de
+        // gradiente (solo color) se mantiene como señal de estado.
+        .scaleEffect(hover && !isDisabled && !reduceMotion ? 1.02 : 1.0)
+        .animation(reduceMotion ? nil : .easeInOut(duration: PastureEffects.animationQuick), value: hover)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(feedAccessibilityLabel)
     }

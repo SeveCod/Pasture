@@ -40,6 +40,7 @@ struct FeedbackToast: View {
     let message: String
     var isError: Bool = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
@@ -54,6 +55,7 @@ struct FeedbackToast: View {
         .background(.regularMaterial, in: Capsule())
         .pastureShadow(PastureEffects.shadowFloat)
         .padding(.bottom, PastureLayout.toastBottomOffset)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        // A11Y-4: con Reduce Motion el toast solo funde, sin desplazamiento.
+        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
     }
 }

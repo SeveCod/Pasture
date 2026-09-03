@@ -9,6 +9,7 @@ struct AskView: View {
     @ObservedObject var feedService: FeedService
     @EnvironmentObject private var fm: MDFileManager
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("askPrivacyNoticeAccepted") private var privacyNoticeAccepted = false
     @State private var showPrivacyNotice = false
 
@@ -138,8 +139,14 @@ struct AskView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onChange(of: viewModel.conversation) { _, _ in
-                    withAnimation(.easeOut(duration: PastureEffects.animationQuick)) {
+                    // A11Y-4: el autoscroll del stream salta sin animación con
+                    // Reduce Motion; el destino es el mismo.
+                    if reduceMotion {
                         proxy.scrollTo("bottom")
+                    } else {
+                        withAnimation(.easeOut(duration: PastureEffects.animationQuick)) {
+                            proxy.scrollTo("bottom")
+                        }
                     }
                 }
             }
@@ -440,13 +447,20 @@ struct AskView: View {
 
 private struct PulseModifier: ViewModifier {
     let speed: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
     func body(content: Content) -> some View {
-        content
-            .scaleEffect(pulse ? 1.3 : 1.0)
-            .opacity(pulse ? 1.0 : 0.4)
-            .animation(.easeInOut(duration: speed).repeatForever(autoreverses: true), value: pulse)
-            .onAppear { pulse = true }
+        // A11Y-4: con Reduce Motion el indicador queda estático (opacidad fija),
+        // sin escalado ni pulso infinito.
+        if reduceMotion {
+            content.opacity(0.7)
+        } else {
+            content
+                .scaleEffect(pulse ? 1.3 : 1.0)
+                .opacity(pulse ? 1.0 : 0.4)
+                .animation(.easeInOut(duration: speed).repeatForever(autoreverses: true), value: pulse)
+                .onAppear { pulse = true }
+        }
     }
 }
