@@ -47,7 +47,16 @@ enum SystemNotifier {
     /// concederse y no justifica avisar de nada.
     static func isDenied() async -> Bool {
         guard isBundled else { return false }
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        return settings.authorizationStatus == .denied
+        return await authorizationStatus() == .denied
+    }
+
+    /// Solo el estado (Sendable) cruza actores: `UNNotificationSettings` no lo es y
+    /// el compilador de CI (más nuevo que el local) rechaza que salga del closure.
+    private nonisolated static func authorizationStatus() async -> UNAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings.authorizationStatus)
+            }
+        }
     }
 }
