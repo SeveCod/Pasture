@@ -5,6 +5,43 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] - 2026-09-04
+
+A pass over the interface rather than the feature set: twelve UX fixes, twelve accessibility fixes, and an internal simplification round. No behaviour of the MCP server, the vault format, or the security invariants changes.
+
+### Added
+
+- **New note without leaving the app**: Cmd+N and a toolbar button create an empty note, in the collection currently selected — the same rule "Paste from Clipboard" already followed.
+- **VoiceOver announcements** for the events that until now were only visible: every toast, the end of an Ask response, and a stream stopped by hand are announced instead of passing silently.
+- **Inbox badge in the menu bar**: the pending-proposal count, until now only in the main window's sidebar, also reaches the popover. Rejecting a proposal asks for confirmation, and approving one gives explicit feedback.
+- **One-click presets in the main window**: applying a saved selection no longer requires going through the menu.
+- **Audible fallback when notifications are denied**: a headless feed or a capture launched by hotkey used to fail silently if Notification Center had no permission. It now plays a system sound, and Settings → General states the permission is missing.
+- **Hotkey registration failures surfaced in Settings**: a combination taken by another app used to fail with no trace. Settings → General now says which one could not be registered.
+
+### Changed
+
+- **Deleting moves to Trash.** Files and collections deleted from Pasture go to the system Trash, recoverable with "Put Back" from the Trash, instead of being removed permanently.
+- **Reduce Motion is honored**: with the system setting on, the Ask pulse, the toast transitions, the automatic scroll and the Feed button's hover scale stop animating.
+- **Fonts scale with Dynamic Type**: the editor font is now relative to `.body` and the sidebar badges to `.caption2`, instead of fixed point sizes.
+- **Clearing the conversation** uses a trash icon and asks for confirmation — it discards the whole transcript, which the previous label did not convey.
+- **The Feed button's tooltip names its destination** ("Feed → clipboard (hold for more options)", or the export destination in its place), so a click no longer has an unnamed effect.
+- Internal simplification with no visible effect: a shared `FeedChrome` modifier for the template sheet, the secret alert and the toast (main window and menu bar shared three copies); `SecretScanResult.alertMessage` as the single source of the secret warning text; a shared queueing helper for the two MCP proposal tools; and the removal of dead design tokens and redundant aliases.
+- Version → 1.10.0. Test count: 710 → 711.
+
+### Fixed
+
+- **Contrast below AA in the template indicator**: the amber `#D4793B` measured 2.91:1 over the light badge background. Light mode now uses `#8F4F1A` (≥4.5:1 over every light background of the app) and the dark tint was deepened from `#3A2E22` to `#2E251B`, taking the badge from 4.15:1 to 4.73:1.
+- **Escape did not close** the review queue nor the proposal inbox — the only two sheets that ignored it.
+- **Template fields had no label** for VoiceOver, and focus did not land on the first one when the sheet opened.
+- **The inbox diff was color-only**: added and removed lines now carry a textual cue, readable without distinguishing green from red.
+- **A file row was read piece by piece** by VoiceOver (name, date, tokens and badges as separate elements); it is now a single combined element.
+- **The context-usage indicator was purely visual**: its state is now also textual.
+- **Deleting several selected files with the keyboard** only removed one of them.
+- **"Open in Editor" was missing from the row's context menu** — it existed only in the status bar and behind Cmd+E.
+- **Scanning an empty folder left the collection created**, with no file inside.
+- An approval message could survive on screen while acting on a different proposal.
+- Removed a hint written in iOS terms that did not describe any gesture available on macOS, and hid the decorative icons that VoiceOver was reading as content.
+
 ## [1.9.0] - 2026-07-16
 
 ### Added

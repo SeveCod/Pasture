@@ -204,6 +204,9 @@ final class FeedService: ObservableObject {
         feedbackDismissTask?.cancel()
         feedbackIsError = isError
         withAnimation { feedbackMessage = message }
+        // El toast se autodescarta a los 2,5 s: sin anuncio, VoiceOver nunca lo ve.
+        // Fire-and-forget; inocuo con VoiceOver apagado.
+        AccessibilityNotification.Announcement(message).post()
         feedbackDismissTask = Task {
             try? await Task.sleep(for: .seconds(PastureLayout.toastDismissDelay))
             guard !Task.isCancelled else { return }

@@ -9,8 +9,10 @@ struct AskView: View {
     @ObservedObject var feedService: FeedService
     @EnvironmentObject private var fm: MDFileManager
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("askPrivacyNoticeAccepted") private var privacyNoticeAccepted = false
     @State private var showPrivacyNotice = false
+    @State private var showClearConfirmation = false
 
     private var contextTokens: Int { fm.totalTokens(for: feedTargets) }
 
@@ -18,14 +20,37 @@ struct AskView: View {
         viewModel.resolvedModel.provider == .anthropic ? "Anthropic" : "OpenRouter"
     }
 
+    private enum ContextUsageLevel { case normal, amber, red }
+
     /// Green below 50% of the model's context window, amber up to 80%, red above.
-    private var contextUsageColor: Color {
+    /// Fuente única de los umbrales: el color y la etiqueta de accesibilidad
+    /// (A11Y-9) leen de aquí, para que no puedan desalinearse.
+    private var contextUsageLevel: ContextUsageLevel {
         let window = viewModel.resolvedModel.contextWindow
-        guard window > 0 else { return Color.pastureTokenBadgeText(colorScheme) }
+        guard window > 0 else { return .normal }
         let ratio = Double(contextTokens) / Double(window)
-        if ratio > 0.8 { return Color.pastureError(colorScheme) }
-        if ratio > 0.5 { return Color.pastureWarning(colorScheme) }
-        return Color.pastureTokenBadgeText(colorScheme)
+        if ratio > 0.8 { return .red }
+        if ratio > 0.5 { return .amber }
+        return .normal
+    }
+
+    private var contextUsageColor: Color {
+        switch contextUsageLevel {
+        case .red:    return Color.pastureError(colorScheme)
+        case .amber:  return Color.pastureWarning(colorScheme)
+        case .normal: return Color.pastureTokenBadgeText(colorScheme)
+        }
+    }
+
+    /// A11Y-9: el nivel de uso no puede ir solo en el color — se dice en texto.
+    private var contextUsageAccessibilityLabel: String {
+        let base = "Approximately \(TokenEstimator.formatted(contextTokens)) of "
+            + "\(TokenEstimator.formatted(viewModel.resolvedModel.contextWindow)) tokens used"
+        switch contextUsageLevel {
+        case .red:    return base + " — above 80% of the context window"
+        case .amber:  return base + " — above 50% of the context window"
+        case .normal: return base
+        }
     }
 
     var body: some View {
@@ -70,7 +95,7 @@ struct AskView: View {
                 .font(.pastureTokenCount)
                 .foregroundStyle(contextUsageColor)
                 .help("Estimated context size vs. the model's context window")
-                .accessibilityLabel("Approximately \(TokenEstimator.formatted(contextTokens)) of \(TokenEstimator.formatted(viewModel.resolvedModel.contextWindow)) tokens used")
+                .accessibilityLabel(contextUsageAccessibilityLabel)
 
             Spacer()
 
@@ -138,8 +163,14 @@ struct AskView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onChange(of: viewModel.conversation) { _, _ in
-                    withAnimation(.easeOut(duration: PastureEffects.animationQuick)) {
+                    // A11Y-4: el autoscroll del stream salta sin animación con
+                    // Reduce Motion; el destino es el mismo.
+                    if reduceMotion {
                         proxy.scrollTo("bottom")
+                    } else {
+                        withAnimation(.easeOut(duration: PastureEffects.animationQuick)) {
+                            proxy.scrollTo("bottom")
+                        }
                     }
                 }
             }
@@ -239,6 +270,7 @@ struct AskView: View {
                 .font(.system(size: PastureLayout.emptyStateIconSize))
                 .foregroundStyle(LinearGradient.pastureBrand)
                 .padding(.bottom, 4)
+                .accessibilityHidden(true)
 
             Text("Ask your context")
                 .font(.pastureEmptyHeading)
@@ -378,14 +410,28 @@ struct AskView: View {
             }
 
             if viewModel.hasConversation || viewModel.error != nil {
-                Button(action: viewModel.clear) {
-                    Image(systemName: "arrow.counterclockwise")
+                // UX-8: destructivo y sin deshacer — se confirma solo cuando hay
+                // conversación real que perder (2+ mensajes).
+                Button {
+                    if viewModel.conversation.messages.count >= 2 {
+                        showClearConfirmation = true
+                    } else {
+                        viewModel.clear()
+                    }
+                } label: {
+                    Image(systemName: "trash")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                 }
                 .buttonStyle(.plain)
                 .help("Clear conversation")
                 .accessibilityLabel("Clear conversation")
+                .alert("Clear conversation?", isPresented: $showClearConfirmation) {
+                    Button("Clear", role: .destructive) { viewModel.clear() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This discards the current conversation. It cannot be undone.")
+                }
             }
         }
         .padding(PastureLayout.askInputPadding)
@@ -440,13 +486,20 @@ struct AskView: View {
 
 private struct PulseModifier: ViewModifier {
     let speed: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
     func body(content: Content) -> some View {
-        content
-            .scaleEffect(pulse ? 1.3 : 1.0)
-            .opacity(pulse ? 1.0 : 0.4)
-            .animation(.easeInOut(duration: speed).repeatForever(autoreverses: true), value: pulse)
-            .onAppear { pulse = true }
+        // A11Y-4: con Reduce Motion el indicador queda estático (opacidad fija),
+        // sin escalado ni pulso infinito.
+        if reduceMotion {
+            content.opacity(0.7)
+        } else {
+            content
+                .scaleEffect(pulse ? 1.3 : 1.0)
+                .opacity(pulse ? 1.0 : 0.4)
+                .animation(.easeInOut(duration: speed).repeatForever(autoreverses: true), value: pulse)
+                .onAppear { pulse = true }
+        }
     }
 }

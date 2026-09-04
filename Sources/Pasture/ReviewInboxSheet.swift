@@ -13,6 +13,11 @@ struct ReviewInboxSheet: View {
     /// Propuesta cuyo destino cambió desde que se propuso: pide confirmación.
     @State private var mismatchProposal: Proposal?
     @State private var errorMessage: String?
+    /// UX-5: rechazar era instantáneo e irreversible (borra el par del `.inbox/`),
+    /// mientras borrar un preset sí pedía confirmación. Ahora también confirma.
+    @State private var proposalPendingRejection: Proposal?
+    /// UX-5: aprobar no daba señal alguna de éxito; aquí va la ruta creada.
+    @State private var successMessage: String?
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -27,11 +32,29 @@ struct ReviewInboxSheet: View {
                 Text("Review inbox")
                     .font(.pastureSheetHeading)
                 Spacer()
+                // A11Y-6: Escape cierra la bandeja. Approve/Reject siguen sin
+                // atajo (`.none` explícito) para que una tecla no promocione
+                // una propuesta sin intención.
                 Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(12)
             Divider()
+
+            if let successMessage {
+                HStack(spacing: 6) {
+                    // El icono es decorativo: VoiceOver lo leía como contenido.
+                    Image(systemName: "checkmark.circle")
+                        .accessibilityHidden(true)
+                    Text(successMessage)
+                        .font(.caption)
+                    Spacer()
+                }
+                .accessibilityElement(children: .combine)
+                .foregroundStyle(Color.pastureSuccess(colorScheme))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
 
             if fm.pendingProposals.isEmpty {
                 emptyState
@@ -69,6 +92,20 @@ struct ReviewInboxSheet: View {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: { message in
             Text(message)
+        }
+        .alert("Reject proposal?",
+               isPresented: Binding(
+                   get: { proposalPendingRejection != nil },
+                   set: { if !$0 { proposalPendingRejection = nil } }
+               ),
+               presenting: proposalPendingRejection) { proposal in
+            Button("Reject", role: .destructive) {
+                fm.reject(proposal)
+                proposalPendingRejection = nil
+            }
+            Button("Cancel", role: .cancel) { proposalPendingRejection = nil }
+        } message: { proposal in
+            Text("The proposal for '\(destinationLabel(proposal))' will be discarded permanently.")
         }
     }
 
@@ -108,10 +145,10 @@ struct ReviewInboxSheet: View {
             if let summary = proposal.secretSummary {
                 HStack(alignment: .top, spacing: 4) {
                     Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(Color.pastureAmber)
+                        .foregroundStyle(Color.pastureWarning(colorScheme))
                     Text("Possible secrets: \(summary)")
                         .font(.caption)
-                        .foregroundStyle(Color.pastureAmber)
+                        .foregroundStyle(Color.pastureWarning(colorScheme))
                 }
             }
 
@@ -119,7 +156,10 @@ struct ReviewInboxSheet: View {
 
             HStack {
                 Spacer()
-                Button("Reject", role: .destructive) { fm.reject(proposal) }
+                Button("Reject", role: .destructive) {
+                    successMessage = nil
+                    proposalPendingRejection = proposal
+                }
                     .controlSize(.small)
                 Button("Approve") { apply(proposal, overrideChangedTarget: false) }
                     .controlSize(.small)
@@ -146,16 +186,28 @@ struct ReviewInboxSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
                 if proposal.kind == .append, let current = fm.appendTargetContent(proposal) {
+                    // A11Y-7: encabezados textuales — el diff no puede depender
+                    // solo del color para distinguir lo actual de lo propuesto.
+                    Text("Current content")
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                     Text(truncated(current))
                         .foregroundStyle(Color.pastureTextSecondary(colorScheme))
+                    Text("Proposed addition")
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                     Text(payload)
                         .foregroundStyle(Color.pastureSuccess(colorScheme))
+                        .accessibilityLabel("Proposed addition: \(payload)")
                 } else {
                     Text(payload)
                         .foregroundStyle(Color.pastureTextPrimary(colorScheme))
                 }
             }
-            .font(.system(size: 12, design: .monospaced))
+            // A11Y-10: relativa pero a `.callout` (12 pt en macOS, el tamaño previo
+            // exacto): este diff se lee antes de aprobar una escritura de agente,
+            // así que no puede perder legibilidad al hacerse escalable.
+            .font(.system(.callout, design: .monospaced))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -181,9 +233,17 @@ struct ReviewInboxSheet: View {
     }
 
     private func apply(_ proposal: Proposal, overrideChangedTarget: Bool) {
+        // Un "Promoted to X" de la propuesta anterior aquí sería feedback engañoso:
+        // se retira en cuanto se actúa sobre otra.
+        successMessage = nil
         switch fm.promote(proposal, overrideChangedTarget: overrideChangedTarget) {
-        case .success:
-            break   // la lista se refresca vía @Published pendingProposals
+        case .success(let url):
+            // La lista se refresca vía @Published pendingProposals; el aviso deja
+            // constancia de dónde acabó el contenido (una promoción no es visible
+            // de otro modo desde la bandeja).
+            let path = PresetResolver.relativePath(for: url, base: MDFileManager.pastureDir)
+                ?? url.lastPathComponent
+            successMessage = "Promoted to \(path)"
         case .failure(.hashMismatch):
             mismatchProposal = proposal
         case .failure(let error):

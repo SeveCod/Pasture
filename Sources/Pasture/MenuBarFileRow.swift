@@ -22,7 +22,7 @@ struct MenuBarFileRow: View {
                         .lineLimit(1)
                     if let collection = file.collection {
                         Text(collection)
-                            .font(.system(size: 9))
+                            .font(.caption2)
                             .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                     }
                 }
@@ -41,6 +41,5 @@ struct MenuBarFileRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(file.name)\(file.collection.map { ", \($0)" } ?? ""), \(TokenEstimator.formatted(file.tokens)) tokens")
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .accessibilityHint("Double-tap to toggle selection")
     }
 }

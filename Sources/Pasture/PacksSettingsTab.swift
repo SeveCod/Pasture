@@ -125,7 +125,7 @@ struct PacksSettingsTab: View {
     private func resultRow(_ pack: CompilePack, _ result: SyncOutcome) -> some View {
         HStack(spacing: 6) {
             Image(systemName: result.isClean ? "checkmark.circle" : "exclamationmark.triangle")
-                .foregroundStyle(result.isClean ? Color.pastureSuccess(colorScheme) : Color.pastureAmber)
+                .foregroundStyle(result.isClean ? Color.pastureSuccess(colorScheme) : Color.pastureWarning(colorScheme))
             Text(result.message)
                 .font(.caption)
                 .foregroundStyle(Color.pastureTextSecondary(colorScheme))

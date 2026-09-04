@@ -9,11 +9,12 @@ struct ContentView: View {
     @EnvironmentObject private var fm: MDFileManager
     @State private var selectedFiles: Set<MDFile> = []
     @State private var activeFile: MDFile?
+    @State private var showNewFileSheet = false
     @State private var showPasteSheet = false
     @State private var showMergeSheet = false
     @State private var showNewCollectionSheet = false
     @State private var showDeleteConfirmation = false
-    @State private var filePendingDeletion: MDFile?
+    @State private var filesPendingDeletion: [MDFile] = []
     @State private var searchText = ""
     @State private var sortOrder: FileSortOrder = .date
     @State private var exportDestinations: [ExportDestination] = ExportSettings.loadDestinations()
@@ -34,9 +35,10 @@ struct ContentView: View {
                 activeFile: $activeFile,
                 searchText: $searchText,
                 sortOrder: $sortOrder,
-                filePendingDeletion: $filePendingDeletion,
+                filesPendingDeletion: $filesPendingDeletion,
                 showDeleteConfirmation: $showDeleteConfirmation,
-                onDrop: handleDrop
+                onDrop: handleDrop,
+                onOpenInEditor: openInExternalEditor
             )
             .navigationSplitViewColumnWidth(
                 min: PastureLayout.sidebarMinWidth,
@@ -47,6 +49,9 @@ struct ContentView: View {
             editorPanel
         }
         .toolbar { toolbarContent }
+        .onReceive(NotificationCenter.default.publisher(for: .newFile)) { _ in
+            showNewFileSheet = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pasteFromClipboard)) { _ in
             showPasteSheet = true
         }
@@ -83,6 +88,17 @@ struct ContentView: View {
             }
         }
         .modifier(presetSheetsAndAlerts)
+        .sheet(isPresented: $showNewFileSheet) {
+            NameInputSheet(title: "New file", actionLabel: "Create") { name in
+                // Nace en la colección activa, igual que una nota pegada.
+                // Los fallos de `create` llegan al usuario por `fm.lastError`.
+                if let created = fm.create(name: name, content: "", collection: activeFile?.collection) {
+                    selectFile(created)
+                    // `created.name` y no `name`: la deduplicación puede haberlo cambiado.
+                    feedService.showFeedback("Created '\(created.name).md'")
+                }
+            }
+        }
         .sheet(isPresented: $showPasteSheet) {
             NameInputSheet(title: "New file from clipboard", actionLabel: "Create") { name in
                 let content = NSPasteboard.general.string(forType: .string) ?? ""
@@ -106,39 +122,15 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $feedService.showTemplateSheet) {
-            TemplateSheet(
-                variables: $feedService.templateVariables,
-                totalTokens: fm.totalTokens(for: feedService.pendingFeedTargets),
-                onCancel: { feedService.cancelTemplateFeed() },
-                onConfirm: { feedService.confirmTemplateFeed(fm: fm) }
-            )
-        }
-        .alert("Delete file?",
+        .alert(deleteAlertTitle,
                isPresented: $showDeleteConfirmation,
-               presenting: filePendingDeletion) { file in
-            Button("Delete", role: .destructive) { deleteFile(file) }
-            Button("Cancel", role: .cancel) { filePendingDeletion = nil }
-        } message: { file in
-            Text("'\(file.name).md' will be permanently deleted.")
+               presenting: filesForDeletionAlert) { files in
+            Button("Delete", role: .destructive) { deleteFiles(files) }
+            Button("Cancel", role: .cancel) { filesPendingDeletion = [] }
+        } message: { files in
+            Text(Self.deleteConfirmationMessage(for: files))
         }
-        .alert(
-            "Possible secret detected",
-            isPresented: Binding(
-                get: { feedService.pendingSecretResult != nil },
-                set: { if !$0 { feedService.cancelSecretDialog() } }
-            ),
-            presenting: feedService.pendingSecretResult
-        ) { _ in
-            // Default seguro = Cancelar (Enter/Escape). SEC-6.
-            Button("Cancel", role: .cancel) { feedService.cancelSecretDialog() }
-            Button("Continue anyway", role: .destructive) { feedService.proceedDespiteSecrets() }
-        } message: { result in
-            // SEC-4: solo fichero + tipo, nunca el valor. SEC-5: "known", sin garantía.
-            Text(secretAlertMessage(for: result))
-        }
-        .overlay(alignment: .bottom) { feedbackOverlay }
-        .animation(.easeInOut(duration: PastureEffects.animationStandard), value: feedService.feedbackMessage)
+        .feedChrome(feedService, fm: fm)
         .onChange(of: fm.lastError) { _, error in
             if let error {
                 feedService.showFeedback(error, isError: true)
@@ -176,19 +168,18 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var feedbackOverlay: some View {
-        if let msg = feedService.feedbackMessage {
-            FeedbackToast(message: msg, isError: feedService.feedbackIsError)
-        }
-    }
-
     // MARK: — Toolbar
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             let targets = feedTargets
+
+            Button { showNewFileSheet = true } label: {
+                Label("New File", systemImage: "doc.badge.plus")
+            }
+            .help("Create a new empty note")
+            .accessibilityLabel("New file")
 
             Button { showNewCollectionSheet = true } label: {
                 Label("New Collection", systemImage: "folder.badge.plus")
@@ -302,13 +293,16 @@ struct ContentView: View {
             if !presets.isEmpty {
                 Divider()
                 ForEach(presets) { preset in
+                    // UX-6: el clic en el nombre aplica el preset (como en la barra
+                    // de menús); la gestión queda en el menú de mantenido.
                     Menu(preset.name) {
-                        Button("Apply") { applyPreset(preset) }
                         Button("Rename\u{2026}") { presetPendingRename = preset }
                         Divider()
                         Button("Delete\u{2026}", role: .destructive) {
                             presetPendingDeletion = preset
                         }
+                    } primaryAction: {
+                        applyPreset(preset)
                     }
                 }
             }
@@ -335,10 +329,34 @@ struct ContentView: View {
         selectedFiles = [file]
     }
 
-    private func deleteFile(_ file: MDFile) {
-        if activeFile == file { activeFile = nil }
-        selectedFiles.remove(file)
-        fm.delete(files: [file])
+    /// Datos del alert de borrado: nil cuando no hay nada pendiente.
+    private var filesForDeletionAlert: [MDFile]? {
+        filesPendingDeletion.isEmpty ? nil : filesPendingDeletion
+    }
+
+    /// Título del alert de borrado, en singular o plural. Se lee del estado y no del
+    /// parámetro del closure: el título se evalúa al construir el cuerpo de la vista.
+    private var deleteAlertTitle: String {
+        let count: Int = filesPendingDeletion.count
+        return count > 1 ? "Delete \(count) files?" : "Delete file?"
+    }
+
+    /// Texto del alert de borrado, en singular o plural.
+    /// Extraído del cuerpo de la vista: en línea el type-checker no lo resuelve.
+    private static func deleteConfirmationMessage(for files: [MDFile]) -> String {
+        if files.count == 1 {
+            let name: String = files[0].name
+            return "'\(name).md' will be moved to the Trash."
+        }
+        let count: Int = files.count
+        return "\(count) files will be moved to the Trash."
+    }
+
+    private func deleteFiles(_ files: [MDFile]) {
+        if let active = activeFile, files.contains(active) { activeFile = nil }
+        selectedFiles.subtract(files)
+        fm.delete(files: files)
+        filesPendingDeletion = []
     }
 
     private func executeFeed(destination: ExportDestination?) {
@@ -365,9 +383,8 @@ struct ContentView: View {
             feedService.showFeedback("No selection to save", isError: true)
             return
         }
-        if let existing = SelectionPresetStore.preset(named: name) {
+        if SelectionPresetStore.preset(named: name) != nil {
             // HU-4: confirmar sobrescritura de un nombre duplicado.
-            _ = existing
             presetOverwritePending = (name: name, paths: paths)
             return
         }
@@ -396,18 +413,6 @@ struct ContentView: View {
         } else {
             feedService.showFeedback("Applied '\(preset.name)'")
         }
-    }
-
-    /// Mensaje del aviso de secretos. SEC-4 (sin valores) + SEC-5 (best-effort).
-    private func secretAlertMessage(for result: SecretScanResult) -> String {
-        let detections = result.summaryLines().joined(separator: "\n")
-        return """
-        Pasture found patterns that look like known credentials:
-
-        \(detections)
-
-        This is a best-effort check for known secret types — it is not a guarantee. Review before sending.
-        """
     }
 
     private func importFromDisk() {

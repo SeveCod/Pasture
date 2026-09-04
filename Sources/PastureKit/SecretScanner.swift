@@ -81,6 +81,19 @@ public struct SecretScanResult: Sendable, Hashable {
         }
         return lines
     }
+
+    /// Mensaje del aviso de secretos. SEC-4 (sin valores) + SEC-5 (best-effort).
+    /// Fuente única para el diálogo de la ventana principal y el de la barra de menús.
+    public var alertMessage: String {
+        let detections = summaryLines().joined(separator: "\n")
+        return """
+        Pasture found patterns that look like known credentials:
+
+        \(detections)
+
+        This is a best-effort check for known secret types — it is not a guarantee. Review before sending.
+        """
+    }
 }
 
 /// Detector best-effort de credenciales en el contenido del feed.

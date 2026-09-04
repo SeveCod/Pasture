@@ -82,8 +82,15 @@ final class AskViewModel: ObservableObject {
                     conversation.appendDelta(delta)
                 }
                 conversation.completeAssistant()
+                // Solo en la ruta de éxito: la respuesta llega en streaming y su
+                // final no tiene señal audible. Cancelación y errores no se anuncian
+                // aquí (el error ya se muestra en pantalla).
+                AccessibilityNotification.Announcement("Response complete").post()
             } catch is CancellationError {
                 conversation.endInterruptedAssistant()
+                // El botón Stop no deja rastro audible: sin esto, quien usa VoiceOver
+                // no recibe confirmación de que el streaming se detuvo.
+                AccessibilityNotification.Announcement("Response stopped").post()
             } catch let clientError as AIClientError {
                 conversation.endInterruptedAssistant()
                 error = clientError

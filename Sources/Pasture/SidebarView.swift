@@ -8,9 +8,10 @@ struct SidebarView: View {
     @Binding var activeFile: MDFile?
     @Binding var searchText: String
     @Binding var sortOrder: FileSortOrder
-    @Binding var filePendingDeletion: MDFile?
+    @Binding var filesPendingDeletion: [MDFile]
     @Binding var showDeleteConfirmation: Bool
     var onDrop: ([NSItemProvider]) -> Bool
+    var onOpenInEditor: (MDFile) -> Void
     @State private var collectionPendingDeletion: String?
     @State private var filePendingRename: MDFile?
     @State private var collectionPendingRename: String?
@@ -43,7 +44,7 @@ struct SidebarView: View {
             Button("Delete", role: .destructive) { fm.deleteCollection(name) }
             Button("Cancel", role: .cancel) { collectionPendingDeletion = nil }
         } message: { name in
-            Text("The empty collection '\(name)' will be deleted.")
+            Text("The empty collection '\(name)' will be moved to the Trash.")
         }
         .sheet(item: $filePendingRename) { file in
             NameInputSheet(title: "Rename '\(file.name)'", actionLabel: "Rename", initialName: file.name) { newName in
@@ -78,7 +79,7 @@ struct SidebarView: View {
                         .foregroundStyle(Color.pastureTextSecondary(colorScheme))
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9))
+                        .font(.caption2)
                         .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                 }
                 .padding(.horizontal, PastureLayout.searchBarHPadding)
@@ -101,13 +102,13 @@ struct SidebarView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.badge.exclamationmark")
-                        .foregroundStyle(Color.pastureAmber)
+                        .foregroundStyle(Color.pastureWarning(colorScheme))
                     Text("\(stale.count) note\(stale.count == 1 ? "" : "s") need review")
                         .font(.pastureStatusBar)
                         .foregroundStyle(Color.pastureTextSecondary(colorScheme))
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9))
+                        .font(.caption2)
                         .foregroundStyle(Color.pastureTextTertiary(colorScheme))
                 }
                 .padding(.horizontal, PastureLayout.searchBarHPadding)
@@ -230,10 +231,10 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .onDeleteCommand {
-            if selectedFiles.count == 1, let file = selectedFiles.first {
-                filePendingDeletion = file
-                showDeleteConfirmation = true
-            }
+            guard !selectedFiles.isEmpty else { return }
+            // Se recorre `fm.files` para respetar el orden mostrado en la lista.
+            filesPendingDeletion = fm.files.filter { selectedFiles.contains($0) }
+            showDeleteConfirmation = true
         }
         .onChange(of: selectedFiles) { _, newVal in
             if newVal.count == 1 { activeFile = newVal.first }
@@ -257,6 +258,12 @@ struct SidebarView: View {
     @ViewBuilder
     private func fileContextMenu(for file: MDFile) -> some View {
         Button {
+            onOpenInEditor(file)
+        } label: {
+            Label("Open in Editor", systemImage: "square.and.pencil")
+        }
+
+        Button {
             filePendingRename = file
         } label: {
             Label("Rename\u{2026}", systemImage: "pencil")
@@ -278,7 +285,7 @@ struct SidebarView: View {
         Divider()
 
         Button(role: .destructive) {
-            filePendingDeletion = file
+            filesPendingDeletion = [file]
             showDeleteConfirmation = true
         } label: {
             Label("Delete", systemImage: "trash")
@@ -333,11 +340,11 @@ struct SidebarView: View {
             HStack(spacing: 4) {
                 if limit.exceeds {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(.caption2, weight: .semibold))
                         .accessibilityHidden(true)
                 } else {
                     Image(systemName: "number")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(.caption2, weight: .semibold))
                         .accessibilityHidden(true)
                 }
                 Text(tokenSummaryText(totalTokens: totalTokens, contextWindow: limit.contextWindow))

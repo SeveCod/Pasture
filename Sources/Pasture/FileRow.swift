@@ -19,7 +19,7 @@ struct FileRow: View {
                     if case .expired = file.freshness(now: Date()) {
                         Image(systemName: "clock.badge.exclamationmark")
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.pastureAmber)
+                            .foregroundStyle(Color.pastureWarning(colorScheme))
                             .help("Stale — past its review date")
                             .accessibilityLabel("Stale note, past its review date")
                     }
@@ -30,6 +30,7 @@ struct FileRow: View {
             }
             Spacer()
             Text(TokenEstimator.formatted(file.tokens))
+                .accessibilityLabel("\(TokenEstimator.formatted(file.tokens)) tokens")
                 .font(.pastureTokenCount)
                 .foregroundStyle(Color.pastureTokenBadgeText(colorScheme))
                 .padding(.horizontal, PastureLayout.tokenBadgeHPadding)
@@ -40,5 +41,8 @@ struct FileRow: View {
                 )
         }
         .padding(.vertical, PastureLayout.fileRowVerticalPadding)
+        // A11Y-8: la fila se anuncia como un solo elemento (nombre, insignias de
+        // plantilla/caducidad, fecha y recuento de tokens), no como cinco paradas.
+        .accessibilityElement(children: .combine)
     }
 }

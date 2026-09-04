@@ -9,9 +9,26 @@ struct FeedButton: View {
     let onClipboard: () -> Void
     let onExport: (ExportDestination) -> Void
     @State private var hover = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var feedLabel: String { "Feed \(TokenEstimator.formatted(totalTokens))" }
     private var feedAccessibilityLabel: String { "\(feedLabel) tokens" }
+
+    /// UX-7: fuente única del destino del clic — la acción primaria y el tooltip
+    /// leen de aquí, para que el tooltip no pueda mentir sobre qué hará el clic.
+    private var defaultDestination: ExportDestination? {
+        guard let defaultID = ExportSettings.defaultDestinationID() else { return nil }
+        return destinations.first(where: { $0.id == defaultID })
+    }
+
+    /// Sin destino con estrella el clic copia al portapapeles, igual que la
+    /// variante sin destinos configurados.
+    private var menuHelpText: String {
+        if let dest = defaultDestination {
+            return "Feed \u{2192} \(dest.name) (hold for more options)"
+        }
+        return "Feed \u{2192} clipboard (hold for more options)"
+    }
 
     var body: some View {
         let isDisabled = targets.isEmpty
@@ -23,7 +40,7 @@ struct FeedButton: View {
             .buttonStyle(.plain)
             .onHover { hovering in hover = hovering }
             .disabled(isDisabled)
-            .help("Copy wrapped in <context> tags for Claude")
+            .help("Feed \u{2192} clipboard")
         } else {
             Menu {
                 Button("Copy to Clipboard") { onClipboard() }
@@ -34,8 +51,7 @@ struct FeedButton: View {
             } label: {
                 buttonLabel(isDisabled: isDisabled)
             } primaryAction: {
-                if let defaultID = ExportSettings.defaultDestinationID(),
-                   let dest = destinations.first(where: { $0.id == defaultID }) {
+                if let dest = defaultDestination {
                     onExport(dest)
                 } else {
                     onClipboard()
@@ -44,7 +60,7 @@ struct FeedButton: View {
             .menuStyle(.borderlessButton)
             .onHover { hovering in hover = hovering }
             .disabled(isDisabled)
-            .help("Feed: click for default, hold for options")
+            .help(menuHelpText)
         }
     }
 
@@ -98,8 +114,10 @@ struct FeedButton: View {
                 : AnyShapeStyle(hover ? LinearGradient.pastureFeedButtonHover : LinearGradient.pastureFeedButton)
         )
         .clipShape(RoundedRectangle(cornerRadius: PastureLayout.feedButtonRadius))
-        .scaleEffect(hover && !isDisabled ? 1.02 : 1.0)
-        .animation(.easeInOut(duration: PastureEffects.animationQuick), value: hover)
+        // A11Y-4: con Reduce Motion se omite el escalado del hover; el cambio de
+        // gradiente (solo color) se mantiene como señal de estado.
+        .scaleEffect(hover && !isDisabled && !reduceMotion ? 1.02 : 1.0)
+        .animation(reduceMotion ? nil : .easeInOut(duration: PastureEffects.animationQuick), value: hover)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(feedAccessibilityLabel)
     }
@@ -111,6 +129,10 @@ struct TemplateSheet: View {
     let totalTokens: Int
     let onCancel: () -> Void
     let onConfirm: () -> Void
+
+    /// A11Y-5: el foco entra en el primer campo al abrir el sheet, para no
+    /// obligar a tabular desde el principio (mismo patrón que `NameInputSheet`).
+    @FocusState private var focusedVariable: TemplateVariable.ID?
 
     var body: some View {
         VStack(spacing: PastureLayout.sheetSpacing) {
@@ -126,7 +148,7 @@ struct TemplateSheet: View {
                         HStack(alignment: .top) {
                             Text("{{\(variable.name)}}")
                                 .font(.pastureTemplateVar)
-                                .foregroundStyle(Color.pastureTemplate)
+                                .foregroundStyle(Color.pastureTemplate(colorScheme))
                                 .frame(width: PastureLayout.templateVarLabelWidth, alignment: .trailing)
                                 .padding(.top, 4)
 
@@ -139,6 +161,8 @@ struct TemplateSheet: View {
                                 )
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: PastureLayout.templateVarInputWidth)
+                                .focused($focusedVariable, equals: variable.id)
+                                .accessibilityLabel("Value for \(variable.name)")
 
                                 if variable.kind == .list && !variable.value.isEmpty {
                                     Text("\(variable.listItems.count) items")
@@ -180,5 +204,6 @@ struct TemplateSheet: View {
         }
         .padding(PastureLayout.sheetPadding)
         .frame(minWidth: PastureLayout.templateSheetMinWidth)
+        .onAppear { focusedVariable = variables.first?.id }
     }
 }

@@ -38,4 +38,20 @@ struct SecretScanResultSummaryTests {
     func emptySummary() {
         #expect(SecretScanResult(matches: []).summaryLines().isEmpty)
     }
+
+    /// Fuente única del texto del diálogo de aviso (antes duplicado en
+    /// ContentView y MenuBarView). SEC-4: el mensaje nunca lleva el valor.
+    @Test("Alert message carries the summary and the best-effort caveat")
+    func alertMessageCarriesSummaryAndCaveat() {
+        let token = "sk-ant-" + "api03-" + String(repeating: "a", count: 24)
+        let result = SecretScanner.scan(fileName: "note.md", content: "key: \(token)")
+        let message = result.alertMessage
+        #expect(message.contains("Pasture found patterns that look like known credentials"))
+        #expect(message.contains("best-effort check"))
+        #expect(!result.summaryLines().isEmpty)
+        for line in result.summaryLines() {
+            #expect(message.contains(line))
+        }
+        #expect(!message.contains(token))
+    }
 }

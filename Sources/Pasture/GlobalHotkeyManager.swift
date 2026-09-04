@@ -14,9 +14,27 @@ final class GlobalHotkeyManager {
 
     static let shared = GlobalHotkeyManager()
 
+    /// Se emite tras cada intento de registro/desregistro para que Settings
+    /// pueda releer `registrationError` (patrón notificación, no ObservableObject:
+    /// el manager es un singleton MainActor sin dueño en la jerarquía de vistas).
+    static let registrationDidChangeNotification = Notification.Name("PastureHotkeyRegistrationDidChange")
+
+    /// Mensaje legible del último fallo de registro, o nil si los combos están
+    /// vivos (o los hotkeys están desactivados). Sin esto el fallo solo iba a
+    /// stderr y el toggle aparentaba estar activo con los atajos muertos (UX-9).
+    private(set) var registrationError: String?
+
     private enum HotkeyID: UInt32 {
         case feed = 1
         case capture = 2
+
+        /// Combo visible para el mensaje de error.
+        var combo: String {
+            switch self {
+            case .feed: return "\u{2303}\u{2325}\u{2318}F"
+            case .capture: return "\u{2303}\u{2325}\u{2318}N"
+            }
+        }
     }
 
     private var refs: [EventHotKeyRef] = []
@@ -48,26 +66,48 @@ final class GlobalHotkeyManager {
         guard refs.isEmpty else { return }
         installHandlerIfNeeded()
         let modifiers = UInt32(controlKey | optionKey | cmdKey)
-        registerKey(code: UInt32(kVK_ANSI_F), id: .feed, modifiers: modifiers)
-        registerKey(code: UInt32(kVK_ANSI_N), id: .capture, modifiers: modifiers)
+        var failed: [HotkeyID] = []
+        if !registerKey(code: UInt32(kVK_ANSI_F), id: .feed, modifiers: modifiers) { failed.append(.feed) }
+        if !registerKey(code: UInt32(kVK_ANSI_N), id: .capture, modifiers: modifiers) { failed.append(.capture) }
+        setRegistrationError(message(forFailed: failed))
     }
 
-    private func registerKey(code: UInt32, id: HotkeyID, modifiers: UInt32) {
+    /// Mensaje que nombra el combo (o los dos) que no se pudo registrar.
+    private func message(forFailed failed: [HotkeyID]) -> String? {
+        switch failed.count {
+        case 0: return nil
+        case 1: return "\(failed[0].combo) is already in use by another app."
+        default:
+            let combos = failed.map(\.combo).joined(separator: " and ")
+            return "\(combos) are already in use by another app."
+        }
+    }
+
+    @discardableResult
+    private func registerKey(code: UInt32, id: HotkeyID, modifiers: UInt32) -> Bool {
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: id.rawValue)
         let status = RegisterEventHotKey(code, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &ref)
         if status == noErr, let ref {
             refs.append(ref)
-        } else {
-            FileHandle.standardError.write(
-                Data("[Pasture] RegisterEventHotKey failed (\(status)) for id \(id.rawValue)\n".utf8)
-            )
+            return true
         }
+        // stderr sigue siendo la única señal bajo `swift run` (sin Settings).
+        FileHandle.standardError.write(
+            Data("[Pasture] RegisterEventHotKey failed (\(status)) for id \(id.rawValue)\n".utf8)
+        )
+        return false
     }
 
     private func unregister() {
         for ref in refs { UnregisterEventHotKey(ref) }
         refs.removeAll()
+        setRegistrationError(nil)
+    }
+
+    private func setRegistrationError(_ message: String?) {
+        registrationError = message
+        NotificationCenter.default.post(name: Self.registrationDidChangeNotification, object: nil)
     }
 
     private func installHandlerIfNeeded() {

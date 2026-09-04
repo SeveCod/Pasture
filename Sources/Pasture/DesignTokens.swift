@@ -20,10 +20,6 @@ extension Color {
     /// Warm amber-orange — bottom-right of icon gradient. #E8944A
     static let pastureAmber = Color(red: 0.910, green: 0.580, blue: 0.290)
 
-    /// Mid-point of gradient for single-color accent contexts. #B6A369
-    /// Derived from the visual midpoint of sage-to-amber.
-    static let pastureMidGradient = Color(red: 0.714, green: 0.639, blue: 0.412)
-
     // MARK: Accent
     // The primary interactive color. A warm olive-sage that feels organic,
     // not the electric blue of default macOS. Accessible on both light/dark.
@@ -33,9 +29,6 @@ extension Color {
 
     /// Primary accent — dark mode. #6B9F6B
     static let pastureAccentDark = Color(red: 0.420, green: 0.624, blue: 0.420)
-
-    /// Accent hover/pressed — slightly deeper. #5A8C5A
-    static let pastureAccentDeep = Color(red: 0.353, green: 0.549, blue: 0.353)
 
     // MARK: Sidebar Background
 
@@ -88,9 +81,16 @@ extension Color {
     /// Template indicator — warm amber from the icon palette. #D4793B
     static let pastureTemplate = Color(red: 0.831, green: 0.475, blue: 0.231)
 
-    /// Template indicator background tint. #FDF3EB (light) / #3A2E22 (dark)
+    /// Template indicator — variante clara. Mismo ámbar profundo que warning:
+    /// #D4793B mide 2,91:1 sobre el fondo del badge claro (falla AA); #8F4F1A
+    /// mide ≥4,5:1 sobre todos los fondos claros de la app. #8F4F1A
+    static let pastureTemplateLight = pastureWarningLight
+
+    /// Template indicator background tint. #FDF3EB (light) / #2E251B (dark).
+    /// El tinte oscuro se oscureció desde #3A2E22 (A11Y-1): el ámbar del badge
+    /// #D4793B medía 4,15:1 encima, por debajo de AA. Sobre #2E251B mide 4,73:1.
     static let pastureTemplateBgLight = Color(red: 0.992, green: 0.953, blue: 0.922)
-    static let pastureTemplateBgDark = Color(red: 0.227, green: 0.180, blue: 0.133)
+    static let pastureTemplateBgDark = Color(red: 0.182, green: 0.144, blue: 0.106)
 
     /// Selection/highlight in sidebar — warm sage tint. #E2EDDF (light) / #2E3E2C (dark)
     static let pastureSelectionLight = Color(red: 0.886, green: 0.929, blue: 0.875)
@@ -109,8 +109,6 @@ extension Color {
 
     /// Grass medium green from icon. #4A8B5C
     static let pastureGrassMedium = Color(red: 0.290, green: 0.545, blue: 0.361)
-
-    static let pastureGrassOrange = pastureTemplate
 
     /// Warning — light mode. Deep amber, ≥4.5:1 on light backgrounds. #8F4F1A
     static let pastureWarningLight = Color(red: 0.561, green: 0.310, blue: 0.102)
@@ -210,6 +208,11 @@ extension Color {
         scheme == .dark ? .pastureWarningDark : .pastureWarningLight
     }
 
+    /// Template indicator — adapts to color scheme (AA en ambos esquemas).
+    static func pastureTemplate(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? .pastureTemplate : .pastureTemplateLight
+    }
+
     /// Template indicator background — adapts to color scheme.
     static func pastureTemplateBg(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? .pastureTemplateBgDark : .pastureTemplateBgLight
@@ -228,19 +231,6 @@ extension LinearGradient {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
-
-    /// Subtle sidebar gradient — nearly invisible warmth. Top is slightly
-    /// cooler, bottom slightly warmer. Creates organic depth.
-    static func pastureSidebarGradient(_ scheme: ColorScheme) -> LinearGradient {
-        let base = scheme == .dark
-            ? Color.pastureSidebarDark
-            : Color.pastureSidebarLight
-        return LinearGradient(
-            colors: [base, base.opacity(0.95)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
 
     /// Feed button gradient — the hero gradient. More saturated than the
     /// brand gradient to draw the eye.
@@ -284,11 +274,9 @@ extension Font {
     static let pastureTokenBadge: Font = .system(.caption, design: .monospaced, weight: .semibold)
 
     // Editor
-    /// Editor text — monospaced for markdown editing. 13pt base.
-    static let pastureEditor: Font = .system(size: 13, weight: .regular, design: .monospaced)
-
-    /// Editor text — alternative proportional option for prose-heavy files.
-    static let pastureEditorProse: Font = .system(size: 14, weight: .regular, design: .serif)
+    /// Editor text — monospaced for markdown editing. Relativa a `.body`
+    /// (13 pt por defecto en macOS) para que escale con Tamaño de Texto Dinámico.
+    static let pastureEditor: Font = .system(.body, design: .monospaced, weight: .regular)
 
     // Status bar
     /// Status bar labels. Small and unobtrusive.
@@ -357,20 +345,14 @@ enum PastureLayout {
     // MARK: Editor
     /// Editor text padding from edges.
     static let editorPadding: CGFloat = 16
-    /// Editor top padding (extra breathing room).
-    static let editorTopPadding: CGFloat = 12
 
     // MARK: Status Bar
-    /// Status bar total height.
-    static let statusBarHeight: CGFloat = 28
     /// Status bar horizontal padding.
     static let statusBarHPadding: CGFloat = 12
     /// Status bar vertical padding.
     static let statusBarVPadding: CGFloat = 6
 
     // MARK: Search Bar
-    /// Search bar total height (including padding).
-    static let searchBarHeight: CGFloat = 36
     /// Search bar horizontal padding.
     static let searchBarHPadding: CGFloat = 12
     /// Search bar vertical padding.
@@ -379,8 +361,6 @@ enum PastureLayout {
     static let searchBarIconSpacing: CGFloat = 8
 
     // MARK: Selection Summary Bar
-    /// Summary bar height.
-    static let summaryBarHeight: CGFloat = 28
     /// Summary bar horizontal padding.
     static let summaryBarHPadding: CGFloat = 12
     /// Summary bar vertical padding.
@@ -455,28 +435,12 @@ enum PastureEffects {
     // MARK: Shadows
     // Shadows are warm-tinted (not pure black) to maintain the organic feel.
 
-    /// Subtle shadow for file rows on hover.
-    static let shadowHover = ShadowSpec(
-        color: Color.black.opacity(0.06),
-        radius: 4,
-        x: 0,
-        y: 2
-    )
-
     /// Medium shadow for floating elements (toasts, popovers).
     static let shadowFloat = ShadowSpec(
         color: Color.black.opacity(0.10),
         radius: 12,
         x: 0,
         y: 4
-    )
-
-    /// Strong shadow for sheets/modals.
-    static let shadowModal = ShadowSpec(
-        color: Color.black.opacity(0.15),
-        radius: 24,
-        x: 0,
-        y: 8
     )
 
     // MARK: Animation Timings
@@ -486,13 +450,6 @@ enum PastureEffects {
 
     /// Standard transition (sheet present, selection change). 250ms.
     static let animationStandard: Double = 0.25
-
-    /// Slow, deliberate animation (empty state appear, feed success). 400ms.
-    static let animationSlow: Double = 0.40
-
-    /// Spring animation for bouncy feedback (toast slide-up).
-    static let springResponse: Double = 0.45
-    static let springDamping: Double = 0.75
 
     // MARK: Material / Blur
 

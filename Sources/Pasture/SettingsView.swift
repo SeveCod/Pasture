@@ -31,6 +31,8 @@ private struct GeneralSettingsTab: View {
     @State private var presets: [SelectionPreset] = SelectionPresetStore.load()
     @State private var defaultPresetID: UUID? = IntegrationSettings.defaultPresetID()
     @State private var loginItemError: String?
+    @State private var notificationsDenied = false
+    @State private var hotkeyError: String?
 
     /// SMAppService exige app empaquetada (falla bajo `swift run`).
     private var isBundled: Bool { Bundle.main.bundleURL.pathExtension == "app" }
@@ -65,7 +67,22 @@ private struct GeneralSettingsTab: View {
                 Toggle("Enable global hotkeys", isOn: $hotkeysEnabled)
                     .onChange(of: hotkeysEnabled) { _, newValue in
                         IntegrationSettings.setGlobalHotkeysEnabled(newValue)
+                        guard newValue else { return }
+                        Task {
+                            await SystemNotifier.ensurePermission()
+                            notificationsDenied = await SystemNotifier.isDenied()
+                        }
                     }
+                if hotkeysEnabled, let hotkeyError {
+                    Text(hotkeyError)
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureError(colorScheme))
+                }
+                if hotkeysEnabled && notificationsDenied {
+                    Text("Notifications are disabled for Pasture — hotkey feedback will be silent. Enable them in System Settings → Notifications.")
+                        .font(.caption)
+                        .foregroundStyle(Color.pastureError(colorScheme))
+                }
                 LabeledContent("Feed default preset", value: "\u{2303}\u{2325}\u{2318}F")
                 LabeledContent("Capture clipboard", value: "\u{2303}\u{2325}\u{2318}N")
             } header: {
@@ -96,9 +113,16 @@ private struct GeneralSettingsTab: View {
         .onAppear {
             if isBundled { launchAtLogin = SMAppService.mainApp.status == .enabled }
             presets = SelectionPresetStore.load()
+            hotkeyError = GlobalHotkeyManager.shared.registrationError
+        }
+        .task {
+            notificationsDenied = await SystemNotifier.isDenied()
         }
         .onReceive(NotificationCenter.default.publisher(for: SelectionPresetStore.didChangeNotification)) { _ in
             presets = SelectionPresetStore.load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: GlobalHotkeyManager.registrationDidChangeNotification)) { _ in
+            hotkeyError = GlobalHotkeyManager.shared.registrationError
         }
     }
 
@@ -199,7 +223,7 @@ private struct ExportSettingsTab: View {
                 persist()
             } label: {
                 Image(systemName: defaultID == dest.wrappedValue.id ? "star.fill" : "star")
-                    .foregroundStyle(defaultID == dest.wrappedValue.id ? Color.pastureAmber : Color.pastureTextTertiary(colorScheme))
+                    .foregroundStyle(defaultID == dest.wrappedValue.id ? Color.pastureWarning(colorScheme) : Color.pastureTextTertiary(colorScheme))
             }
             .buttonStyle(.plain)
             .help(defaultID == dest.wrappedValue.id ? "Default destination" : "Set as default")

@@ -40,7 +40,7 @@ import Foundation
         // Serializamos y verificamos que cada inputSchema tiene type:"object".
         let line = try MCPTools.catalog().mcpLine()
         let json = try JSONDecoder().decode(JSONValue.self, from: Data(line.utf8))
-        let tools = try #require(json.object?["tools"]?.arrayValue)
+        let tools = try #require(json.object?["tools"]?.array)
         #expect(tools.count == 4)
         for tool in tools {
             #expect(tool.object?["inputSchema"]?.object?["type"]?.stringValue == "object")

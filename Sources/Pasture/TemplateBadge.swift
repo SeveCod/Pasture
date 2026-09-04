@@ -13,7 +13,7 @@ struct TemplateBadge: View {
                     .font(.system(.caption2, design: .default, weight: .medium))
             }
         }
-        .foregroundStyle(Color.pastureTemplate)
+        .foregroundStyle(Color.pastureTemplate(colorScheme))
         .padding(.horizontal, compact ? 0 : 6)
         .padding(.vertical, compact ? 0 : 2)
         .background {

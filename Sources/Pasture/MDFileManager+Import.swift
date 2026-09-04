@@ -63,7 +63,9 @@ extension MDFileManager {
             return 0
         }
 
-        _ = createCollection(name: folderName)
+        // `createCollection` solo devuelve true si la creó esta llamada; si la colección
+        // ya existía no se debe retirar aunque el escaneo no encuentre nada.
+        let didCreateCollection = createCollection(name: folderName)
 
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
@@ -71,6 +73,7 @@ extension MDFileManager {
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
+            if didCreateCollection { deleteCollection(folderName) }
             lastError = "Cannot read folder"
             return 0
         }
@@ -87,6 +90,10 @@ extension MDFileManager {
         }
 
         if count == 0 {
+            // Sin ficheros importados la colección queda vacía: se retira para no
+            // dejar residuo en el sidebar. `deleteCollection` comprueba que está
+            // vacía y refresca colecciones y watcher.
+            if didCreateCollection { deleteCollection(folderName) }
             lastError = "No .md files found in \(folderName)"
         }
         return count

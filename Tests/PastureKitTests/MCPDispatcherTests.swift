@@ -100,7 +100,7 @@ import Foundation
         let request = #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#
         let response = try #require(dispatcher.handle(line: request))
         let json = try decode(response)
-        let tools = try #require(json.object?["result"]?.object?["tools"]?.arrayValue)
+        let tools = try #require(json.object?["result"]?.object?["tools"]?.array)
         #expect(tools.count == 4)
     }
 

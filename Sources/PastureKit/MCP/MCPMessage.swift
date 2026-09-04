@@ -88,9 +88,6 @@ public enum JSONValue: Codable, Equatable, Sendable {
         return nil
     }
 
-    /// Alias legible usado por las tools.
-    public var arrayValue: [JSONValue]? { array }
-
     public var stringValue: String? {
         if case .string(let value) = self { return value }
         return nil

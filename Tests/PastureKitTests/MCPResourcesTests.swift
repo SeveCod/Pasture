@@ -49,7 +49,7 @@ import Foundation
         let line = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":1,"method":"resources/list"}"#))
         let json = try decode(line)
-        let resources = try #require(json.object?["result"]?.object?["resources"]?.arrayValue)
+        let resources = try #require(json.object?["result"]?.object?["resources"]?.array)
         #expect(resources.count == 2)
 
         let uris = Set(resources.compactMap { $0.object?["uri"]?.stringValue })
@@ -81,7 +81,7 @@ import Foundation
         let line = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"pasture:///notas.md"}}"#))
         let json = try decode(line)
-        let contents = try #require(json.object?["result"]?.object?["contents"]?.arrayValue)
+        let contents = try #require(json.object?["result"]?.object?["contents"]?.array)
         #expect(contents.count == 1)
         #expect(contents.first?.object?["text"]?.stringValue == "Notas raíz.")
         #expect(contents.first?.object?["uri"]?.stringValue == "pasture:///notas.md")
@@ -99,7 +99,7 @@ import Foundation
         // Parte 1: no aparece en la lista (FileLibrary filtra symlinks).
         let listLine = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":3,"method":"resources/list"}"#))
-        let uris = try decode(listLine).object?["result"]?.object?["resources"]?.arrayValue?
+        let uris = try decode(listLine).object?["result"]?.object?["resources"]?.array?
             .compactMap { $0.object?["uri"]?.stringValue } ?? []
         #expect(!uris.contains("pasture:///evil.md"))
 
@@ -171,6 +171,6 @@ import Foundation
         let line = try #require(dispatcher.handle(
             line: #"{"jsonrpc":"2.0","id":9,"method":"resources/list"}"#))
         let json = try decode(line)
-        #expect(json.object?["result"]?.object?["resources"]?.arrayValue?.isEmpty == true)
+        #expect(json.object?["result"]?.object?["resources"]?.array?.isEmpty == true)
     }
 }
