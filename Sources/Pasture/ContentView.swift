@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var activeFile: MDFile?
     @State private var showNewFileSheet = false
     @State private var showPasteSheet = false
+    @State private var pasteboardText: String?
     @State private var showMergeSheet = false
     @State private var showNewCollectionSheet = false
     @State private var showDeleteConfirmation = false
@@ -53,7 +54,7 @@ struct ContentView: View {
             showNewFileSheet = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .pasteFromClipboard)) { _ in
-            showPasteSheet = true
+            startPasteFlow()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openInEditor)) { _ in
             if let file = activeFile {
@@ -101,7 +102,11 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showPasteSheet) {
             NameInputSheet(title: "New file from clipboard", actionLabel: "Create") { name in
-                let content = NSPasteboard.general.string(forType: .string) ?? ""
+                // El contenido se capturó en startPasteFlow(), en el gesto del
+                // usuario: leer aquí (acción de un botón, sin evento de pegado)
+                // puede devolver nil bajo la privacidad de portapapeles de
+                // macOS 15.4+, y el antiguo `?? ""` creaba un archivo en blanco.
+                guard let content = pasteboardText, !content.isEmpty else { return }
                 if let created = fm.create(name: name, content: content, collection: activeFile?.collection) {
                     selectFile(created)
                 }
@@ -187,7 +192,7 @@ struct ContentView: View {
             .help("Create a new collection")
             .accessibilityLabel("New Collection")
 
-            Button { showPasteSheet = true } label: {
+            Button { startPasteFlow() } label: {
                 Label("Paste", systemImage: "doc.on.clipboard")
             }
             .help("Create new .md from clipboard")
@@ -327,6 +332,30 @@ struct ContentView: View {
     private func selectFile(_ file: MDFile) {
         activeFile = file
         selectedFiles = [file]
+    }
+
+    /// Lee el portapapeles EN el gesto del usuario (Cmd+Shift+V o botón de la
+    /// toolbar) y abre la sheet de nombre solo si hay texto. En macOS 15.4+ el
+    /// acceso programático al pasteboard general puede denegarse (privacidad de
+    /// portapapeles) y devolver nil sin error: leer aquí maximiza la exención
+    /// "user originated and paste related" y, si aun así no hay texto, se avisa
+    /// en vez de crear un archivo en blanco.
+    private func startPasteFlow() {
+        let text = NSPasteboard.general.string(forType: .string)
+        guard let text, !text.isEmpty else {
+            feedService.showFeedback(Self.emptyClipboardMessage(), isError: true)
+            return
+        }
+        pasteboardText = text
+        showPasteSheet = true
+    }
+
+    private static func emptyClipboardMessage() -> String {
+        if #available(macOS 15.4, *),
+           NSPasteboard.general.accessBehavior == .alwaysDeny {
+            return "macOS is blocking clipboard access — allow Pasture in System Settings → Privacy & Security → Paste from Other Apps"
+        }
+        return "Clipboard has no text to paste"
     }
 
     /// Datos del alert de borrado: nil cuando no hay nada pendiente.
