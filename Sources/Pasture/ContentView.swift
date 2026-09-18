@@ -165,30 +165,32 @@ struct ContentView: View {
         ToolbarItemGroup(placement: .primaryAction) {
             let targets = feedTargets
 
-            Menu {
-                Button { showNewCollectionSheet = true } label: {
-                    Label("New Collection\u{2026}", systemImage: "folder.badge.plus")
-                }
-
-                Divider()
-
-                Button { startPasteFlow() } label: {
-                    Label("Paste from Clipboard", systemImage: "doc.on.clipboard")
-                }
-                .accessibilityHint("Creates a new Markdown file from clipboard content")
-                Button { importFromDisk() } label: {
-                    Label("Import Files\u{2026}", systemImage: "square.and.arrow.down")
-                }
-                .accessibilityHint("Import PDF, CSV, or DOCX files as Markdown")
-                Button { scanFolderFromDisk() } label: {
-                    Label("Scan Folder\u{2026}", systemImage: "folder.badge.questionmark")
-                }
-                .accessibilityHint("Scan a folder for Markdown files and import them")
-            } label: {
-                Label("Add", systemImage: "plus")
+            Button { showNewCollectionSheet = true } label: {
+                Label("New Collection", systemImage: "folder.badge.plus")
             }
-            .help("Add: new collection, paste, import files or scan a folder")
-            .accessibilityLabel("Add content")
+            .help("Create a new collection")
+            .accessibilityLabel("New Collection")
+
+            Button { startPasteFlow() } label: {
+                Label("Paste", systemImage: "doc.on.clipboard")
+            }
+            .help("Create new .md from clipboard")
+            .accessibilityLabel("Paste from clipboard")
+            .accessibilityHint("Creates a new Markdown file from clipboard content")
+
+            Button { importFromDisk() } label: {
+                Label("Import", systemImage: "square.and.arrow.down")
+            }
+            .help("Import files (PDF, CSV, DOCX)")
+            .accessibilityLabel("Import files")
+            .accessibilityHint("Import PDF, CSV, or DOCX files as Markdown")
+
+            Button { scanFolderFromDisk() } label: {
+                Label("Scan Folder", systemImage: "folder.badge.questionmark")
+            }
+            .help("Scan a folder for .md files and import them")
+            .accessibilityLabel("Scan folder")
+            .accessibilityHint("Scan a folder for Markdown files and import them")
 
             Button { exportFeedToDisk() } label: {
                 Label("Export", systemImage: "square.and.arrow.up")

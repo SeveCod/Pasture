@@ -14,7 +14,7 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Add-content actions (New Collection, Paste, Import, Scan Folder) are grouped into a single toolbar `+` menu, taking the toolbar from 11 items to 7. If tooltips weren't showing due to toolbar overflow, this fixes it — still pending verification by hovering.
+- The toolbar goes from 11 items to 10: `New File` is gone and Import uses its own icon, so no two buttons share `doc.badge.plus` any more. New Collection, Paste, Import and Scan Folder stay as separate icons.
 - The Inbox and review-queue notices merge into a single strip.
 - Version → 1.11.0. Test count: 711 → 728.
 
