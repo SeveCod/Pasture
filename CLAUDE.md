@@ -13,7 +13,7 @@ The detail panel toggles between a read-only Markdown preview and an Ask mode fo
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
-swift test               # Run all PastureKit unit tests (711 tests, Swift Testing framework)
+swift test               # Run all PastureKit unit tests (727 tests, Swift Testing framework)
 swift test --filter TemplateEngineTests                        # Run one test suite
 swift test --filter TemplateEngineTests/renderSimpleReplacement # Run a single test
 swift test --filter MCPDispatcherTests                         # MCP dispatcher tests
@@ -35,7 +35,7 @@ CI: GitHub Actions (`.github/workflows/ci.yml`) runs debug build, release build,
 - **PastureKit** (`Sources/PastureKit/`) — Testable logic: `TemplateEngine` (tokenizer + recursive descent parser + renderer with `#if`/`#unless`/`#each` blocks), `TokenEstimator` (heuristic counter + cost estimation), `FilenameSanitizer`, `StringExtensions` (`xmlEscapedAttribute`), `ExportDestination`, `ExportSettings`, `AIProvider` (`AIProviderKind` enum + `AIModel` struct with pricing catalog), `AISettings` (provider/model persistence in UserDefaults, API keys in Keychain), `KeychainStore` (Security.framework wrapper), `AIClient` (streaming actor for Anthropic/OpenRouter), `SSEParser` (Server-Sent Events line parser), `ContextBuilder` (XML context tag generation for feed output), `DOCXConverter` (NSAttributedString → Markdown with heading/bold/italic/link detection), `CSVConverter` (CSV → Markdown table), `PathValidator` (path containment check for security), `FileLibrary` (filesystem queries: async library scan, dedup URLs, hidden/symlink filtering), `DocumentImporter` (PDF/CSV/DOCX → Markdown conversion, no persistence), `FeedFormat`/`FeedFormatSettings` (feed payload format enum + UserDefaults persistence), `SecretScanner` (pre-feed credential detector), `ContextLimit` (binary context-window guard for sidebar), `SelectionPreset`/`SelectionPresetStore` (named file selections with relative-path persistence), `PresetResolver` (relative-path → URL resolution with path-traversal guard). Also contains the full MCP layer — see **MCP layer** subsection below. All public. This is the testable module.
 - **Pasture** (`Sources/Pasture/`) — SwiftUI app. Re-exports PastureKit via `@_exported import PastureKit` in `TemplateEngine.swift`.
 - **pasture-mcp** (`Sources/pasture-mcp/`) — MCP server executable. A thin `main.swift` (~30 lines) that wires `FileHandle.standardInput` to `MCPLineReader` and feeds each line to `MCPDispatcher`. All protocol logic lives in PastureKit (ADR-MCP-004). Zero external dependencies beyond PastureKit and Foundation.
-- **PastureKitTests** (`Tests/PastureKitTests/`) — 711 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 9 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`, `MCPResourcesTests`, `MCPPromptsTests`.
+- **PastureKitTests** (`Tests/PastureKitTests/`) — 727 tests using Swift Testing framework (`import Testing`, `@Test`, `#expect`). Includes 9 MCP test suites: `MCPDispatcherTests`, `MCPToolsTests`, `MCPProtocolTests`, `MCPLineReaderTests`, `MCPConfigGeneratorTests`, `MCPVaultSecretStatTests`, `MCPEndToEndTests`, `MCPResourcesTests`, `MCPPromptsTests`.
 
 ### Data flow
 
@@ -123,6 +123,8 @@ Twelve files under `Sources/PastureKit/MCP/`. All logic is pure Swift, `Sendable
 - **`SelectionPreset`** — `Codable`, `Sendable`, `Hashable`, `Identifiable` struct. Fields: `id` (UUID), `name` (max 80 chars, control characters stripped by `sanitizedName(_:)`), `relativePaths` ([String] relative to `~/.pasture/`), `createdAt`. Never stores file content, absolute URLs, or API keys (ADR-QW-003). `missingFilesMessage(missingPaths:)` produces the actionable toast string.
 - **`SelectionPresetStore`** — Static namespace for UserDefaults CRUD of `[SelectionPreset]`. Methods: `load`, `save`, `upsert`, `delete`, `rename`, `preset(named:)` (case-insensitive, for overwrite confirmation). Cap: 100 presets. Fires `didChangeNotification` on every mutation.
 - **`PresetResolver`** — Static `nonisolated` enum. `resolve(relativePaths:base:)` converts relative paths to absolute URLs, silently discarding any that fail `PathValidator.isInside` (path-traversal guard, SEC-9). `missingPaths(relativePaths:base:existing:)` returns the subset not present on disk (or rejected by traversal check), for the actionable toast. `relativePath(for:base:)` converts a URL back to a relative path when saving a new preset from the current selection.
+- **`SidebarTree`** — Pure `nonisolated` enum. `build(files:collections:base:hidingEmpty:)` groups a flat `[MDFile]` into `[CollectionNode]` (`name: String?` — `nil` is *Uncategorized*, which sorts first and is omitted when empty). Does not sort: it preserves the order of both inputs, so the sort criterion lives in one place (`SidebarView.sortedFiles`). `hidingEmpty` drops collections with no matches while a search is active. `CollectionNode.id` is prefixed (`"u:"` / `"c:<name>"`) so a collection literally named `""` cannot collide with the vault root.
+- **`CollectionExpansionStore`** — Static namespace persisting the set of expanded collections in UserDefaults, keyed by `CollectionNode.id` (same pattern as `SelectionPresetStore`). `effectiveExpansion(stored:nodeID:isSearching:)` and `applying(_:to:nodeID:isSearching:)` are pure: **while a search is active every collection reads as expanded and the stored state is never written**, so clearing the search restores the previous collapse state. That invariant is guarded by `searchDoesNotWriteState` and validated by mutation.
 
 #### Living context — freshness (v1.7 Fase A, shipped under v1.6.0)
 
@@ -259,4 +261,4 @@ Puntos de entrada desde macOS sin abrir la app. Lógica pura en PastureKit; pega
 
 ## Bundle ID & versioning
 
-Bundle ID: `com.sevecod.pasture`. Current version: **1.10.0**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).
+Bundle ID: `com.sevecod.pasture`. Current version: **1.11.0**. Version is hardcoded in `scripts/bundle.sh` (not derived from git tags). When releasing: update the `VERSION` variable there and add an entry to `CHANGELOG.md` (Keep a Changelog format, SemVer).

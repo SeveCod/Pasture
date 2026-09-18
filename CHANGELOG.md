@@ -5,6 +5,20 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.11.0] - 2026-09-18
+
+### Added
+- El sidebar agrupa las notas en colecciones plegables, plegadas por defecto: con 673 notas ahora abre con ~23 filas en vez de 673. El pliegue se recuerda entre sesiones.
+- Cada cabecera de colección muestra su número de notas y su total de tokens.
+
+### Changed
+- Las acciones de añadir contenido (New Collection, Paste, Import, Scan Folder) se agrupan en un único menú `+` de la toolbar, que pasa de 11 elementos a 7.
+- Los avisos de Inbox y de cola de revisión se funden en una sola franja.
+- La toolbar pasa de 11 elementos a 7. Si los tooltips no se veían por desbordamiento de la barra, esto lo corrige; queda pendiente de verificar al pasar el ratón.
+
+### Removed
+- **New File**: fuera el botón de la toolbar, el atajo Cmd+N y su diálogo. Las notas se crean con Paste, Import, Scan Folder, el Quick Capture global o el editor externo.
+
 ## [1.10.0] - 2026-09-04
 
 A pass over the interface rather than the feature set: twelve UX fixes, twelve accessibility fixes, and an internal simplification round. No behaviour of the MCP server, the vault format, or the security invariants changes.
