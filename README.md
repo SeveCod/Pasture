@@ -37,12 +37,12 @@ open Package.swift
 - Pasture watches the filesystem and reflects external changes automatically
 
 ### Ask mode (right panel)
-Toggle with `Cmd+Shift+A` or the toolbar button. Select files, type a question, and receive a streaming response from Anthropic or OpenRouter.
+Toggle with `Cmd+Shift+A` or the toolbar button. Select files, type a question, and receive a streaming response from Anthropic or OpenRouter. Since v1.7 the exchange is a **multi-turn conversation**: follow-up questions keep the transcript, and the whole thread can be saved back into the vault as a new context note.
 
 - Context bar: file count, context window usage (`~Xk / Yk tokens`, colored by occupancy), model name, cost estimate
 - Streaming responses with Markdown rendering
 - Question history: the last 10 questions are available from the clock menu next to the input
-- Action bar: Copy, Save to Pasture, Export as `.md`
+- Action bar: copy the whole conversation, save it as a context note, or export it as `.md`
 - Configure provider, model, and API key in Settings → AI
 - The selected files' content is sent to the configured provider (Anthropic or OpenRouter); a one-time notice is shown before the first request
 - Context limit indicator: the selection summary warns when the token count exceeds the configured model's context window
@@ -121,6 +121,42 @@ Toolbar button. Saves the feed context as `.md` to any location via save dialog.
 ### Import PDF / CSV / DOCX
 Toolbar button or drag & drop. PDFs: text extracted via PDFKit (native, zero dependencies); scanned PDFs without OCR layer return empty text. CSV: converted to a Markdown table. DOCX/DOC: converted via `NSAttributedString` with heading/bold/italic/link detection.
 
+### Collections in the sidebar (v1.11)
+Notes are grouped into collapsible collections, collapsed by default, each showing its note
+count and token total. The collapse state persists across sessions; the collection of the
+active note expands on its own. While a search is active every collection reads as expanded
+and the saved state is left untouched.
+
+### Freshness and the review queue (v1.7)
+A note can declare expiry in a YAML-lite frontmatter block (`review_after`, `ttl`,
+`last_reviewed`). Stale notes get a clock badge, the sidebar shows a "N notes need review"
+banner, and the MCP server annotates them in its non-blocking `warning` channel. Marking a
+note reviewed is a GUI-only action — the MCP server never writes to the visible vault.
+
+### Local sources (v1.7, Fase B)
+A note with `source: <folder>` re-imports that folder's `.md` files on demand
+(File → Refresh Sources, `Cmd+Shift+R`). Non-destructive: a hand-authored file, or one whose
+`generated: true` flag was removed, is never overwritten. Local folders only, no network.
+
+### Memory Inbox (v1.8)
+With `PASTURE_ALLOW_PROPOSALS=1` the MCP server gains `propose_note` and `propose_append`.
+Neither writes to the visible vault: they queue a proposal in a hidden `~/.pasture/.inbox/`.
+Promoting one is a human action from the GUI, with a mandatory diff and no bulk approval.
+Without the variable the tool catalog is byte-identical to a read-only server.
+
+### Context Compiler — Packs (v1.6)
+Makes the vault the single source of truth for a repo's `CLAUDE.md` / `AGENTS.md`. A *pack* is
+a saved selection plus per-project variables plus the targets to write. Settings → Packs manages
+them; `Cmd+Shift+P` syncs them all. A target edited by a human is a conflict and is never
+overwritten without confirmation, every overwrite is backed up outside the repo and the vault,
+and a target inside `~/.pasture/` is rejected outright.
+
+### System integration (v1.9)
+Opt-in global hotkeys (feed headless, quick capture), the `pasture://` URL scheme
+(`feed` / `new` / `search`), a "New Pasture Capture" Services menu item, login item and a
+menu-bar-only mode. A headless feed blocks on detected secrets: with no dialog available,
+not copying is the conservative equivalent of the dialog's default Cancel.
+
 ## Template syntax
 
 Any `.md` file can declare variables using double-brace syntax. When you hit Feed, Pasture collects all variables, prompts for their values, substitutes them, and copies the result. The editor always shows the raw template — substitution happens only at Feed time.
@@ -144,7 +180,9 @@ The token counter is a heuristic (~4 chars/token). Not the actual tokenizer — 
 | `Cmd+Shift+A` | Toggle Ask mode |
 | `Cmd+Shift+V` | Create new file from clipboard |
 | `Cmd+E` | Open file in default editor |
-| `Cmd+,` | Settings (Export destinations, AI config) |
+| `Cmd+Shift+P` | Sync all Context Compiler packs |
+| `Cmd+Shift+R` | Refresh local sources |
+| `Cmd+,` | Settings (General, Export, AI, Packs, MCP) |
 | Drag & drop | Import `.md` or `.pdf` files |
 
 ## Structure
@@ -209,20 +247,20 @@ Sources/
 │   ├── MDFileManager.swift    — File CRUD and library state
 │   ├── MDFileManager+Import.swift — Import persistence, merge, scan folder
 │   ├── DirectoryWatcher.swift — DispatchSource file watching (debounced)
-│   ├── SettingsView.swift     — Export, AI, and MCP settings tabs
+│   ├── SettingsView.swift     — General, Export, AI, Packs and MCP settings tabs
 │   ├── DesignTokens.swift     — Design system
 │   ├── TemplateEngine.swift   — @_exported re-export of PastureKit
 │   └── AppDelegate.swift
 ├── pasture-mcp/               — MCP server executable
 │   └── main.swift             — Thin transport loop (stdin → MCPLineReader → MCPDispatcher → stdout)
-└── Tests/PastureKitTests/     — 501 tests (Swift Testing framework)
+└── Tests/PastureKitTests/     — 743 tests (Swift Testing framework)
 ```
 
 No CoreData, no SwiftData, no external dependencies.
 
 ## Release
 
-**Current version: 1.5.1** (2026-07-04)
+**Current version: 1.11.0** (2026-09-18)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history of changes.
 

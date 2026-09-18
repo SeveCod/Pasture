@@ -1,8 +1,16 @@
 import Foundation
 
-/// Catálogo y ejecución de las cuatro tools de solo lectura (D2: una sola
-/// `feed_context`). Toda la lógica de dominio se reutiliza de PastureKit
-/// (`FileLibrary`, `PathValidator`, `MDFile.matches`, `ContextBuilder`).
+/// Catálogo y ejecución de las tools MCP. Toda la lógica de dominio se reutiliza
+/// de PastureKit (`FileLibrary`, `PathValidator`, `MDFile.matches`,
+/// `ContextBuilder`).
+///
+/// Son **cuatro de solo lectura** (D2: una sola `feed_context`) —`list_files`,
+/// `read_file`, `search`, `feed_context`— más **dos de propuesta**
+/// (`propose_note`, `propose_append`) que sólo aparecen en el catálogo con
+/// `PASTURE_ALLOW_PROPOSALS=1` y que **no escriben en el vault visible**: encolan
+/// en `.inbox/` y un humano promueve desde la GUI (SEC-M11 redefinido en v1.8).
+/// Este docstring decía "las cuatro tools de solo lectura" mientras el propio
+/// fichero ya registraba las dos de propuesta.
 public enum MCPTools {
 
     // MARK: — Tipos del catálogo (tools/list)

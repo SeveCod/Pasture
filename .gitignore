@@ -11,3 +11,8 @@ dist/
 .claude/
 sonar-project.properties
 .scannerwork/
+
+# Ajenos al producto: entraron por un commit de auto-sync (git add -A), no por
+# una decision del proyecto. Se conservan en disco, fuera del control de versiones.
+streamdeck-whisper/
+.superpowers/
