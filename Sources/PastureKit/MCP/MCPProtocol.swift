@@ -4,7 +4,14 @@ import Foundation
 public enum MCPProtocol {
     public static let version = "2025-06-18"
     public static let serverName = "pasture-mcp"
-    public static let serverVersion = "1.8.0"
+    /// Versión del servidor MCP. Va SIEMPRE con la del producto: el ejecutable se
+    /// distribuye dentro del bundle de la app, así que dos números distintos sólo
+    /// pueden confundir a quien lea `serverInfo` para depurar.
+    /// Se quedó congelada en 1.8.0 mientras la app llegaba a la 1.11.0, y el test
+    /// que debía detectarlo defendía el desfase (audit 360). Ahora
+    /// `MCPServerVersionTests` la coteja contra `scripts/bundle.sh`, que es la
+    /// fuente única de la versión.
+    public static let serverVersion = "1.11.0"
 
     // Códigos JSON-RPC para errores de PROTOCOLO (no de tool — D6 / ADR-006).
     public static let parseError = -32700

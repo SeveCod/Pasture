@@ -105,6 +105,24 @@ struct SidebarTreeTests {
         #expect(nodes.first(where: { $0.isUncategorized })?.id == "u:")
     }
 
+    /// Audit 360: este contrato estaba SIN vigilar. El test de arriba solo exigía
+    /// que los ids fuesen distintos entre sí y fijaba `"u:"`, así que cambiar el
+    /// prefijo `"c:"` dejaba la suite entera en verde (comprobado por mutación).
+    /// Importa porque el id es la clave persistida en `CollectionExpansionStore`
+    /// y la usa también el auto-despliegue del sidebar: si deriva, el estado de
+    /// plegado del usuario se huerfaniza y la nota activa queda invisible.
+    @Test("Los prefijos del id son parte del contrato, no un detalle")
+    func idPrefixesAreContractual() {
+        #expect(CollectionNode.id(forCollection: nil) == "u:")
+        #expect(CollectionNode.id(forCollection: "Mercados") == "c:Mercados")
+        #expect(CollectionNode.id(forCollection: "") == "c:")
+        // Y el nodo construido debe coincidir con la fuente única: si `id` y el
+        // helper estático divergen, la GUI y el store dejan de entenderse.
+        let node = CollectionNode(name: "Mercados", files: [])
+        #expect(node.id == CollectionNode.id(forCollection: "Mercados"))
+        #expect(CollectionNode(name: nil, files: []).id == CollectionNode.id(forCollection: nil))
+    }
+
     @Test("Hashable/Equatable se basan solo en id, no en (name, files)")
     func equatableByIdentityOnly() {
         let a = CollectionNode(name: "Alpha", files: [file("a", in: "Alpha")])

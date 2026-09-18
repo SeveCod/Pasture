@@ -257,7 +257,9 @@ struct SidebarView: View {
     /// búsqueda activa ya la ve abierta sin tocar el estado guardado.
     private func expandCollection(of file: MDFile?) {
         guard let file, !isSearching else { return }
-        let id = file.collection.map { "c:\($0)" } ?? "u:"
+        // Fuente única de la clave: recomponerla aquí a mano dejaba dos copias de
+        // la misma regla, y esta no la vigilaba ningún test (audit 360).
+        let id = CollectionNode.id(forCollection: file.collection)
         guard !expandedCollections.contains(id) else { return }
         expandedCollections.insert(id)
         CollectionExpansionStore.save(expandedCollections)

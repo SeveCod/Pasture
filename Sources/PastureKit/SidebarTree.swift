@@ -14,7 +14,18 @@ public struct CollectionNode: Identifiable, Sendable, Hashable {
 
     /// Clave estable para la selección y para `CollectionExpansionStore`.
     /// Lleva prefijo para que una colección llamada "" no colisione con la raíz.
-    public var id: String { name.map { "c:\($0)" } ?? "u:" }
+    public var id: String { Self.id(forCollection: name) }
+
+    /// Fuente ÚNICA de la clave, para quien tiene el nombre de la colección pero
+    /// no un nodo construido (p. ej. el sidebar al auto-desplegar la colección de
+    /// la nota activa). Antes ese llamante recomponía `"c:\(name)"` a mano: dos
+    /// copias de la misma regla, y la de la GUI no la vigilaba ningún test
+    /// (audit 360). Como el id es además la clave persistida en UserDefaults,
+    /// que las dos deriven es un fallo silencioso: la nota nueva queda
+    /// seleccionada pero invisible, y el plegado guardado se huerfaniza.
+    public static func id(forCollection name: String?) -> String {
+        name.map { "c:\($0)" } ?? "u:"
+    }
 
     /// La identidad real del nodo es `id`; comparar por `(name, files)` haría
     /// que dos snapshots del mismo nodo con distinto contenido de fichero

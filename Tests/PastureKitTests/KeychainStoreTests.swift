@@ -41,10 +41,21 @@ struct KeychainStoreTests {
         #expect(KeychainStore.load(key: "to_delete", service: service) == nil)
     }
 
-    @Test("Delete is no-op for nonexistent key")
-    func deleteNonexistent() {
+    /// Audit 360: este test no tenía ninguna aserción — sólo comprobaba que la
+    /// llamada no reventase, y el valor de retorno ya lo cubre
+    /// `deleteReturnsSuccess`. Ahora fija el invariante que de verdad no estaba
+    /// vigilado: borrar una clave ausente no debe tocar a sus vecinas del mismo
+    /// servicio (la app guarda una clave por proveedor en el mismo servicio, así
+    /// que un borrado demasiado ancho dejaría al usuario sin la otra).
+    @Test("Delete is a no-op for a nonexistent key and leaves siblings intact")
+    func deleteNonexistent() throws {
         let service = testService()
-        KeychainStore.delete(key: "never_existed", service: service)
+        try KeychainStore.save(key: "vecina", value: "sigo aquí", service: service)
+
+        #expect(KeychainStore.delete(key: "never_existed", service: service) == true)
+
+        #expect(KeychainStore.load(key: "never_existed", service: service) == nil)
+        #expect(KeychainStore.load(key: "vecina", service: service) == "sigo aquí")
     }
 
     @Test("Delete returns true whether the key existed or not")
