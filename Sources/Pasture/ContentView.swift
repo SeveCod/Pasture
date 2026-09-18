@@ -175,12 +175,15 @@ struct ContentView: View {
                 Button { startPasteFlow() } label: {
                     Label("Paste from Clipboard", systemImage: "doc.on.clipboard")
                 }
+                .accessibilityHint("Creates a new Markdown file from clipboard content")
                 Button { importFromDisk() } label: {
                     Label("Import Files\u{2026}", systemImage: "square.and.arrow.down")
                 }
+                .accessibilityHint("Import PDF, CSV, or DOCX files as Markdown")
                 Button { scanFolderFromDisk() } label: {
                     Label("Scan Folder\u{2026}", systemImage: "folder.badge.questionmark")
                 }
+                .accessibilityHint("Scan a folder for Markdown files and import them")
             } label: {
                 Label("Add", systemImage: "plus")
             }
