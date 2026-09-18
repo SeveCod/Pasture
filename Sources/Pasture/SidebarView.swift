@@ -25,8 +25,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             searchBar
             Color.pastureDivider(colorScheme).frame(height: 1)
-            inboxBanner
-            reviewBanner
+            statusStrip
             fileList
             Color.pastureDivider(colorScheme).frame(height: 1)
             selectionSummary
@@ -66,62 +65,55 @@ struct SidebarView: View {
         }
     }
 
-    /// v1.8: badge de la bandeja de propuestas — visible solo si hay pendientes.
+    /// Franja de avisos: propuestas pendientes (v1.8) y notas caducadas (v1.7).
+    /// Una sola fila con hasta dos avisos, en vez de dos filas apiladas.
     @ViewBuilder
-    private var inboxBanner: some View {
-        let count = fm.pendingProposals.count
-        if count > 0 {
-            Button {
-                showInbox = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "tray.and.arrow.down")
-                        .foregroundStyle(Color.pastureAccent(colorScheme))
-                    Text("Inbox (\(count))")
-                        .font(.pastureStatusBar)
-                        .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+    private var statusStrip: some View {
+        let proposals = fm.pendingProposals.count
+        let stale = fm.staleFiles().count
+        if proposals > 0 || stale > 0 {
+            HStack(spacing: 12) {
+                if proposals > 0 {
+                    Button { showInbox = true } label: {
+                        statusChip(
+                            icon: "tray.and.arrow.down",
+                            tint: Color.pastureAccent(colorScheme),
+                            text: "Inbox (\(proposals))"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Agent proposals waiting for your review")
+                    .accessibilityLabel("Review inbox, \(proposals) proposals pending")
                 }
-                .padding(.horizontal, PastureLayout.searchBarHPadding)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
+                if stale > 0 {
+                    Button { showReviewQueue = true } label: {
+                        statusChip(
+                            icon: "clock.badge.exclamationmark",
+                            tint: Color.pastureWarning(colorScheme),
+                            text: "\(stale) to review"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Notes past their review date")
+                    .accessibilityLabel("Review queue, \(stale) notes need review")
+                }
+                Spacer()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Review inbox, \(count) proposals pending")
+            .padding(.horizontal, PastureLayout.searchBarHPadding)
+            .padding(.vertical, 6)
             Color.pastureDivider(colorScheme).frame(height: 1)
         }
     }
 
-    /// v1.7: banner de la cola de revisión — visible solo si hay notas caducadas.
-    @ViewBuilder
-    private var reviewBanner: some View {
-        let stale = fm.staleFiles()
-        if !stale.isEmpty {
-            Button {
-                showReviewQueue = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock.badge.exclamationmark")
-                        .foregroundStyle(Color.pastureWarning(colorScheme))
-                    Text("\(stale.count) note\(stale.count == 1 ? "" : "s") need review")
-                        .font(.pastureStatusBar)
-                        .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-                }
-                .padding(.horizontal, PastureLayout.searchBarHPadding)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Review queue, \(stale.count) notes need review")
-            Color.pastureDivider(colorScheme).frame(height: 1)
+    private func statusChip(icon: String, tint: Color, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+            Text(text)
+                .font(.pastureStatusBar)
+                .foregroundStyle(Color.pastureTextSecondary(colorScheme))
         }
+        .contentShape(Rectangle())
     }
 
     private func renameFile(_ file: MDFile, to newName: String) {
