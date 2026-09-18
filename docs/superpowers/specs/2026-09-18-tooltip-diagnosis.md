@@ -28,6 +28,20 @@ de la rama.
 Conclusión parcial: **la hipótesis 1 (desbordamiento del `ToolbarItemGroup`) sigue viva**, porque
 la estructura que la provocaba está hoy intacta tras la reversión.
 
+## Observación del usuario (2026-09-18, tras la v1.11)
+
+> «sigue sin aparecer info on mousehover»
+
+Primer dato observado del que hay registro. Confirma que **el objetivo nº 2 de la v1.11 no se
+alcanzó**: la reversión de `80a6379` dejó los tooltips como estaban antes de la rama.
+
+Lo que este dato **no** distingue todavía es si el problema es de la toolbar o global, porque no
+consta sobre qué control se pasó el ratón. Ésa es la bifurcación del punto 1 de abajo y sigue
+siendo lo primero que hay que resolver.
+
+**El usuario ha dado el asunto por aceptable de momento** («pero está bien»), así que esto queda
+parado a propósito, no olvidado.
+
 ## Lo que FALTA, y sólo se puede hacer con la app delante
 
 Nada de esto es deducible del código: requiere pasar el ratón por la interfaz. Son los
