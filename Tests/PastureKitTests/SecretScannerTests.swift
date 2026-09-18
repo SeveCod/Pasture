@@ -85,6 +85,60 @@ struct SecretScannerTests {
         #expect(result.kinds.contains(.slackToken))
     }
 
+    // Audit 360 (A1): estas tres familias NO estaban en el catálogo. La de
+    // OpenRouter es la grave — es el segundo proveedor que la propia app integra
+    // y cuya clave guarda en el llavero, y el escáner es un gate que BLOQUEA en
+    // HeadlessFeed y en PackWriter, así que una clave sin detectar se escribía en
+    // el CLAUDE.md de un repo del usuario camino del commit.
+    @Test("Detects OpenRouter key (sk-or-v1-)")
+    func detectsOpenRouter() {
+        // Por concatenación (push protection). Forma real: sk-or-v1- + 64 hex.
+        let secret = "sk-or-" + "v1-" + String(repeating: "a1b2c3d4", count: 8)
+        let result = SecretScanner.scan(fileName: "keys.md", content: "OPENROUTER=\(secret)")
+        #expect(result.kinds.contains(.openRouterKey))
+    }
+
+    @Test("Detects Google API key (AIza)")
+    func detectsGoogleAPIKey() {
+        let secret = "AIza" + String(repeating: "B", count: 35)
+        let result = SecretScanner.scan(fileName: "keys.md", content: secret)
+        #expect(result.kinds.contains(.googleAPIKey))
+    }
+
+    @Test("Detects Stripe live key, ignores test key")
+    func detectsStripeLiveOnly() {
+        let live = "sk_" + "live_" + String(repeating: "c3d4e5f6", count: 4)
+        let test = "sk_" + "test_" + String(repeating: "c3d4e5f6", count: 4)
+        #expect(SecretScanner.scan(fileName: "k.md", content: live).kinds.contains(.stripeKey))
+        // Una clave `test` de Stripe no es sensible: hacer saltar un gate que
+        // bloquea por ella sería fricción sin ganancia. Decisión deliberada.
+        #expect(!SecretScanner.scan(fileName: "k.md", content: test).kinds.contains(.stripeKey))
+    }
+
+    // MARK: — Invariante: el catálogo cubre TODOS los proveedores de la app
+
+    /// La guardia que habría cazado A1 y que cazará al siguiente proveedor.
+    ///
+    /// El defecto no fue "falta un patrón": fue que el catálogo del escáner y la
+    /// lista de proveedores que la app sabe almacenar en el llavero derivaron sin
+    /// que nada lo notase. Este test barre `AIProviderKind.allCases`, así que
+    /// añadir un proveedor sin añadir su patrón deja de compilar (el `switch` es
+    /// exhaustivo) o falla aquí.
+    @Test("Toda clave de un proveedor soportado por la app es detectable")
+    func everySupportedProviderIsScannable() {
+        for provider in AIProviderKind.allCases {
+            let (muestra, esperada): (String, SecretKind) = switch provider {
+            case .anthropic:
+                ("sk-ant-" + "api03-" + String(repeating: "a1b2c3d4", count: 5), .anthropicKey)
+            case .openRouter:
+                ("sk-or-" + "v1-" + String(repeating: "a1b2c3d4", count: 8), .openRouterKey)
+            }
+            let result = SecretScanner.scan(fileName: "k.md", content: "KEY=\(muestra)")
+            #expect(result.kinds.contains(esperada),
+                    "el proveedor \(provider.rawValue) se guarda en el llavero pero su clave no la detecta el escáner, que es un gate que bloquea en HeadlessFeed y PackWriter")
+        }
+    }
+
     // MARK: — Discriminación de familias
 
     // sk-ant- debe clasificarse como Anthropic, NO como genérico sk-.
