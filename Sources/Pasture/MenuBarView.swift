@@ -11,13 +11,24 @@ struct MenuBarView: View {
     @State private var exportDestinations: [ExportDestination] = ExportSettings.loadDestinations()
     @State private var presets: [SelectionPreset] = SelectionPresetStore.load()
     @State private var hasPacks: Bool = !PackStore.load().isEmpty
-    @StateObject private var feedService = FeedService()
+    /// Lo posee `PastureApp`: como `@StateObject` propio moría con el popover y
+    /// se perdía el feed pendiente de confirmación (audit 360, A5).
+    @ObservedObject var feedService: FeedService
 
     // Search is intentionally independent from the main window's, but the
     // predicate itself is shared (MDFile.matches) so both stay consistent.
-    private var filteredFiles: [MDFile] {
-        guard !searchText.isEmpty else { return fm.files }
-        return fm.files.filter { $0.matches(query: searchText) }
+    //
+    // Cacheado en estado y recalculado sólo cuando cambian la consulta o los
+    // ficheros. Como propiedad computada, `matches(query:)` recorría el contenido
+    // completo de todas las notas del vault en CADA evaluación de `body`, y en el
+    // main actor (audit 360, A4). La ventana principal ya lo resolvía así con
+    // `fm.filteredFiles`; el popover se había quedado fuera.
+    @State private var filteredFiles: [MDFile] = []
+
+    private func recomputeFilteredFiles() {
+        filteredFiles = searchText.isEmpty
+            ? fm.files
+            : fm.files.filter { $0.matches(query: searchText) }
     }
 
     private var feedTargets: [MDFile] {
@@ -37,6 +48,9 @@ struct MenuBarView: View {
         }
         .frame(width: 320)
         .feedChrome(feedService, fm: fm)
+        .onAppear { recomputeFilteredFiles() }
+        .onChange(of: searchText) { _, _ in recomputeFilteredFiles() }
+        .onChange(of: fm.files) { _, _ in recomputeFilteredFiles() }
         .onReceive(NotificationCenter.default.publisher(for: ExportSettings.didChangeNotification)) { _ in
             exportDestinations = ExportSettings.loadDestinations()
         }

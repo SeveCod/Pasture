@@ -168,8 +168,12 @@ final class MDFileManager: ObservableObject {
     func loadFiles() {
         loadTask?.cancel()
         let dir = Self.pastureDir
+        // Se pasa el snapshot actual para que la carga sea incremental: las notas
+        // cuyo fichero no ha cambiado no se releen (audit 360, A3). El watcher
+        // dispara en cada guardado, incluidos los de la propia app.
+        let known = files
         loadTask = Task { [weak self] in
-            let result = await FileLibrary.load(at: dir)
+            let result = await FileLibrary.load(at: dir, reusing: known)
             guard !Task.isCancelled else { return }
             self?.apply(result)
         }

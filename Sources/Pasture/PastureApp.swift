@@ -4,6 +4,14 @@ import SwiftUI
 struct PastureApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var fm = MDFileManager()
+    /// El `FeedService` del popover lo posee la APP, no la vista.
+    ///
+    /// Como `@StateObject` de `MenuBarView` moría con el popover: al perder el
+    /// foco —que es justo lo que pasa cuando aparece el aviso de secretos o la
+    /// hoja de plantilla— la vista se destruía y con ella el `pendingSecretProceed`,
+    /// así que el feed no se entregaba y nadie avisaba (audit 360, A5). Viviendo
+    /// aquí, el estado pendiente sobrevive y el diálogo se repone al reabrir.
+    @StateObject private var menuBarFeedService = FeedService()
 
     var body: some Scene {
         Window("Pasture", id: "main") {
@@ -48,7 +56,7 @@ struct PastureApp: App {
         }
 
         MenuBarExtra("Pasture", systemImage: "leaf.fill") {
-            MenuBarView()
+            MenuBarView(feedService: menuBarFeedService)
                 .environmentObject(fm)
         }
         .menuBarExtraStyle(.window)
