@@ -17,6 +17,9 @@ struct SidebarView: View {
     @State private var collectionPendingRename: String?
     @State private var showReviewQueue = false
     @State private var showInbox = false
+    /// Colecciones desplegadas, por `CollectionNode.id`. Se siembra del store al
+    /// aparecer y se reescribe en cada plegado (salvo durante una búsqueda).
+    @State private var expandedCollections: Set<String> = CollectionExpansionStore.load()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -192,39 +195,48 @@ struct SidebarView: View {
         }
     }
 
-    var fileList: some View {
-        let sorted = sortedFiles
-        let grouped = Dictionary(grouping: sorted, by: \.collection)
-        let uncategorized = grouped[nil] ?? []
-        let visibleCollns = fm.searchQuery.isEmpty
-            ? fm.collections
-            : fm.collections.filter { grouped[$0] != nil }
-        return List(selection: $selectedFiles) {
-            if !uncategorized.isEmpty {
-                Section {
-                    ForEach(uncategorized) { file in
-                        fileRow(file: file)
-                    }
-                } header: {
-                    Text("Uncategorized")
-                        .font(.pastureSummary)
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-                }
-            }
+    private var isSearching: Bool { !fm.searchQuery.isEmpty }
 
-            ForEach(visibleCollns, id: \.self) { collectionName in
-                let collectionFiles = grouped[collectionName] ?? []
-                Section {
-                    ForEach(collectionFiles) { file in
+    /// Nodos que se pintan ahora. Con búsqueda activa se ocultan las colecciones
+    /// sin coincidencias: un triángulo que no lleva a nada solo hace ruido.
+    private var nodes: [CollectionNode] {
+        SidebarTree.build(
+            files: sortedFiles,
+            collections: fm.collections,
+            base: MDFileManager.pastureDir,
+            hidingEmpty: isSearching
+        )
+    }
+
+    /// El pliegue de un nodo. Durante una búsqueda se ve abierto y el `set` no
+    /// escribe, así que al borrar la búsqueda vuelve el estado guardado.
+    private func expansionBinding(for node: CollectionNode) -> Binding<Bool> {
+        Binding(
+            get: {
+                CollectionExpansionStore.effectiveExpansion(
+                    stored: expandedCollections, nodeID: node.id, isSearching: isSearching
+                )
+            },
+            set: { newValue in
+                let next = CollectionExpansionStore.applying(
+                    newValue, to: expandedCollections, nodeID: node.id, isSearching: isSearching
+                )
+                guard next != expandedCollections else { return }
+                expandedCollections = next
+                CollectionExpansionStore.save(next)
+            }
+        )
+    }
+
+    var fileList: some View {
+        List(selection: $selectedFiles) {
+            ForEach(nodes) { node in
+                DisclosureGroup(isExpanded: expansionBinding(for: node)) {
+                    ForEach(node.files) { file in
                         fileRow(file: file)
                     }
-                } header: {
-                    Text(collectionName)
-                        .font(.pastureSummary)
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-                        .contextMenu {
-                            collectionHeaderContextMenu(collectionName: collectionName, isEmpty: collectionFiles.isEmpty)
-                        }
+                } label: {
+                    collectionHeader(node)
                 }
             }
         }
@@ -241,6 +253,31 @@ struct SidebarView: View {
         }
         .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in
             onDrop(providers)
+        }
+    }
+
+    /// Cabecera del nodo: nombre, número de notas y tokens. Conserva el menú
+    /// contextual de la colección (renombrar / borrar si está vacía).
+    @ViewBuilder
+    private func collectionHeader(_ node: CollectionNode) -> some View {
+        HStack(spacing: 6) {
+            Text(node.name ?? "Uncategorized")
+                .font(.pastureSummary)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                .lineLimit(1)
+            Spacer()
+            Text("\(node.fileCount)")
+                .font(.pastureSummary)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+        }
+        .contentShape(Rectangle())
+        .help("\(node.fileCount) note\(node.fileCount == 1 ? "" : "s"), ~\(TokenEstimator.formatted(node.totalTokens)) tokens")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(node.name ?? "Uncategorized"), \(node.fileCount) notes, approximately \(TokenEstimator.formatted(node.totalTokens)) tokens")
+        .contextMenu {
+            if let name = node.name {
+                collectionHeaderContextMenu(collectionName: name, isEmpty: node.files.isEmpty)
+            }
         }
     }
 
