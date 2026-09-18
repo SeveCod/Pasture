@@ -104,4 +104,12 @@ struct SidebarTreeTests {
         #expect(Set(nodes.map(\.id)).count == nodes.count)
         #expect(nodes.first(where: { $0.isUncategorized })?.id == "u:")
     }
+
+    @Test("Hashable/Equatable se basan solo en id, no en (name, files)")
+    func equatableByIdentityOnly() {
+        let a = CollectionNode(name: "Alpha", files: [file("a", in: "Alpha")])
+        let b = CollectionNode(name: "Alpha", files: [file("b", in: "Alpha"), file("c", in: "Alpha")])
+        #expect(a == b)
+        #expect(a.hashValue == b.hashValue)
+    }
 }

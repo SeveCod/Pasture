@@ -17,8 +17,8 @@ struct SidebarView: View {
     @State private var collectionPendingRename: String?
     @State private var showReviewQueue = false
     @State private var showInbox = false
-    /// Colecciones desplegadas, por `CollectionNode.id`. Se siembra del store al
-    /// aparecer y se reescribe en cada plegado (salvo durante una búsqueda).
+    /// Colecciones desplegadas, por `CollectionNode.id`. Se siembra del store en
+    /// el inicializador del `@State` y se reescribe en cada plegado (salvo durante una búsqueda).
     @State private var expandedCollections: Set<String> = CollectionExpansionStore.load()
 
     var body: some View {
@@ -90,7 +90,7 @@ struct SidebarView: View {
                         statusChip(
                             icon: "clock.badge.exclamationmark",
                             tint: Color.pastureWarning(colorScheme),
-                            text: "\(stale) to review"
+                            text: "\(stale) note\(stale == 1 ? "" : "s") to review"
                         )
                     }
                     .buttonStyle(.plain)
@@ -100,7 +100,6 @@ struct SidebarView: View {
                 Spacer()
             }
             .padding(.horizontal, PastureLayout.searchBarHPadding)
-            .padding(.vertical, 6)
             Color.pastureDivider(colorScheme).frame(height: 1)
         }
     }
@@ -113,6 +112,7 @@ struct SidebarView: View {
                 .font(.pastureStatusBar)
                 .foregroundStyle(Color.pastureTextSecondary(colorScheme))
         }
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
     }
 
@@ -243,16 +243,31 @@ struct SidebarView: View {
         .onChange(of: selectedFiles) { _, newVal in
             if newVal.count == 1 { activeFile = newVal.first }
         }
+        .onChange(of: activeFile) { _, newVal in
+            expandCollection(of: newVal)
+        }
         .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in
             onDrop(providers)
         }
+    }
+
+    /// Despliega la colección del fichero activo si estaba plegada, para que una
+    /// nota nueva (Paste/Import/Merge/preset) no quede seleccionada pero invisible
+    /// con todo plegado por defecto. No escribe si ya estaba desplegada, y una
+    /// búsqueda activa ya la ve abierta sin tocar el estado guardado.
+    private func expandCollection(of file: MDFile?) {
+        guard let file, !isSearching else { return }
+        let id = file.collection.map { "c:\($0)" } ?? "u:"
+        guard !expandedCollections.contains(id) else { return }
+        expandedCollections.insert(id)
+        CollectionExpansionStore.save(expandedCollections)
     }
 
     /// Cabecera del nodo: nombre, número de notas y tokens. Conserva el menú
     /// contextual de la colección (renombrar / borrar si está vacía).
     @ViewBuilder
     private func collectionHeader(_ node: CollectionNode) -> some View {
-        HStack(spacing: 6) {
+        let header = HStack(spacing: 6) {
             Text(node.name ?? "Uncategorized")
                 .font(.pastureSummary)
                 .foregroundStyle(Color.pastureTextTertiary(colorScheme))
@@ -261,15 +276,25 @@ struct SidebarView: View {
             Text("\(node.fileCount)")
                 .font(.pastureSummary)
                 .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+            Text("~\(TokenEstimator.formatted(node.totalTokens))")
+                .font(.pastureSummary)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
         }
         .contentShape(Rectangle())
         .help("\(node.fileCount) note\(node.fileCount == 1 ? "" : "s"), ~\(TokenEstimator.formatted(node.totalTokens)) tokens")
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(node.name ?? "Uncategorized"), \(node.fileCount) notes, approximately \(TokenEstimator.formatted(node.totalTokens)) tokens")
-        .contextMenu {
-            if let name = node.name {
+        .accessibilityLabel("\(node.name ?? "Uncategorized"), \(node.fileCount) note\(node.fileCount == 1 ? "" : "s"), approximately \(TokenEstimator.formatted(node.totalTokens)) tokens")
+
+        // El `.contextMenu` se aplica solo si hay nombre: envolver únicamente su
+        // contenido en el `if let` deja el modificador presente sobre
+        // Uncategorized con un menú vacío, que algunas versiones de macOS abren
+        // igualmente en blanco.
+        if let name = node.name {
+            header.contextMenu {
                 collectionHeaderContextMenu(collectionName: name, isEmpty: node.files.isEmpty)
             }
+        } else {
+            header
         }
     }
 

@@ -8,16 +8,19 @@ Pasture uses [Semantic Versioning](https://semver.org/).
 ## [1.11.0] - 2026-09-18
 
 ### Added
-- El sidebar agrupa las notas en colecciones plegables, plegadas por defecto: con 673 notas ahora abre con ~23 filas en vez de 673. El pliegue se recuerda entre sesiones.
-- Cada cabecera de colección muestra su número de notas y su total de tokens.
+
+- **The sidebar groups notes into collapsible collections**, collapsed by default: with 673 notes it now opens with ~23 rows instead of 673. The collapse state is remembered across sessions, and the collection of the active file expands automatically so a newly created or selected note is never left selected but out of sight.
+- Each collection header shows its note count and its total token count.
 
 ### Changed
-- Las acciones de añadir contenido (New Collection, Paste, Import, Scan Folder) se agrupan en un único menú `+` de la toolbar, que pasa de 11 elementos a 7.
-- Los avisos de Inbox y de cola de revisión se funden en una sola franja.
-- La toolbar pasa de 11 elementos a 7. Si los tooltips no se veían por desbordamiento de la barra, esto lo corrige; queda pendiente de verificar al pasar el ratón.
+
+- Add-content actions (New Collection, Paste, Import, Scan Folder) are grouped into a single toolbar `+` menu, taking the toolbar from 11 items to 7. If tooltips weren't showing due to toolbar overflow, this fixes it — still pending verification by hovering.
+- The Inbox and review-queue notices merge into a single strip.
+- Version → 1.11.0. Test count: 711 → 727.
 
 ### Removed
-- **New File**: fuera el botón de la toolbar, el atajo Cmd+N y su diálogo. Las notas se crean con Paste, Import, Scan Folder, el Quick Capture global o el editor externo.
+
+- **New File**: gone is the toolbar button, the Cmd+N shortcut, and its dialog. Notes are created with Paste, Import, Scan Folder, the global Quick Capture, or the external editor.
 
 ## [1.10.0] - 2026-09-04
 

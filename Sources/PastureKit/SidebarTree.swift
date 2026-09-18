@@ -16,6 +16,17 @@ public struct CollectionNode: Identifiable, Sendable, Hashable {
     /// Lleva prefijo para que una colección llamada "" no colisione con la raíz.
     public var id: String { name.map { "c:\($0)" } ?? "u:" }
 
+    /// La identidad real del nodo es `id`; comparar por `(name, files)` haría
+    /// que dos snapshots del mismo nodo con distinto contenido de fichero
+    /// resultasen "distintos" cuando lo que importa aquí es qué colección es.
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    public static func == (lhs: CollectionNode, rhs: CollectionNode) -> Bool {
+        lhs.id == rhs.id
+    }
+
     public var isUncategorized: Bool { name == nil }
 
     public var fileCount: Int { files.count }
