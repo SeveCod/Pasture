@@ -5,6 +5,38 @@ All notable changes to Pasture are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pasture uses [Semantic Versioning](https://semver.org/).
 
+## [1.11.0] - 2026-09-18
+
+### Added
+
+- **The sidebar groups notes into collapsible collections**, collapsed by default: with 673 notes it now opens with ~23 rows instead of 673. The collapse state is remembered across sessions, and the collection of the active file expands automatically so a newly created or selected note is never left selected but out of sight.
+- Each collection header shows its note count and its total token count.
+
+### Changed
+
+- The toolbar goes from 11 items to 10: `New File` is gone and Import uses its own icon, so no two buttons share `doc.badge.plus` any more. New Collection, Paste, Import and Scan Folder stay as separate icons.
+- The Inbox and review-queue notices merge into a single strip.
+- **The library reloads incrementally**: a note whose file has not changed (same modification date *and* same size) is reused instead of being read, re-tokenised, re-scanned for template variables and re-parsed for frontmatter. Every burst from the directory watcher — including the ones the app causes by saving — used to re-read the whole vault.
+- The menu bar popover caches its filtered list instead of filtering every note's full content on each render, on the main actor.
+- The MCP server reports version `1.11.0`. It had stayed at `1.8.0`, and the test that should have caught that was pinning the stale value.
+- Version → 1.11.0. Test count: 711 → 743.
+
+### Fixed
+
+- **Search in the main window filtered nothing.** The query was propagated with `Just(searchText).debounce(…)`, and Combine discards a debounce's pending value when the upstream completes — `Just` completes immediately, so the sink never fired. Typing in the sidebar search box left the list untouched; `isSearching` was therefore always false, so neither the hiding of empty collections nor the "a search never persists the collapse state" rule was ever exercised in production, and `pasture://search?q=` was inert. The menu bar had its own working implementation, which is why it went unnoticed.
+- **A pack target that is not valid UTF-8 is no longer destroyed.** A `CLAUDE.md` in Latin-1, or any binary file, read back as `nil` and was treated as *missing*: the conflict gate did not fire and no backup was taken, so all three of the module's declared defences failed at once. Such a target is now a conflict, and backups are written byte for byte.
+- **A feed started from the menu bar no longer disappears in silence.** The popover's `FeedService` was owned by the popover itself, so when the secret warning or the template sheet took the focus away, the view was destroyed and the pending feed went with it: nothing was delivered and nothing was said. The app owns it now, so the pending state survives.
+- Deleting a key from the Keychain that was never there no longer had an assertion behind it; the case that mattered — that it leaves sibling keys alone — is now covered.
+
+### Security
+
+- **`SecretScanner` detects OpenRouter keys** (`sk-or-v1-…`). The generic `sk-` pattern requires alphanumerics immediately after the prefix, so the dash in `sk-or-` cut the match short and the key of the app's own second provider went undetected. The scanner is a blocking gate for headless feeds and for pack writes, so such a key could be written into a repo's `CLAUDE.md` on its way to a commit. Google (`AIza…`) and Stripe live keys (`sk_live_…`) are detected too. A new guard sweeps every provider the app can store a key for.
+
+### Removed
+
+- **New File**: gone is the toolbar button, the Cmd+N shortcut, and its dialog. Notes are created with Paste, Import, Scan Folder, the global Quick Capture, or the external editor.
+- `streamdeck-whisper/` and `.superpowers/` leave version control. They are unrelated to Pasture and had arrived through an automatic `git add -A` commit. The files stay on disk.
+
 ## [1.10.0] - 2026-09-04
 
 A pass over the interface rather than the feature set: twelve UX fixes, twelve accessibility fixes, and an internal simplification round. No behaviour of the MCP server, the vault format, or the security invariants changes.

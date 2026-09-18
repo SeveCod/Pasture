@@ -4,20 +4,26 @@ import Foundation
 public enum SecretKind: String, Sendable, CaseIterable, Hashable {
     case anthropicKey   // sk-ant-...
     case openAIKey      // sk-... / sk-proj-... (genérico, excluyendo sk-ant)
+    case openRouterKey  // sk-or-v1-... (el otro proveedor que integra la app)
     case githubToken    // ghp_ / gho_ / ghu_ / ghs_ / github_pat_ (fine-grained)
     case awsAccessKey   // AKIA / ASIA (STS temporal) [0-9A-Z]{16}
     case pemPrivateKey  // -----BEGIN ... PRIVATE KEY-----
     case slackToken     // xox[baprs]-...
+    case googleAPIKey   // AIza...
+    case stripeKey      // sk_live_... / rk_live_...
 
     /// Etiqueta legible para el aviso. No expone ningún valor.
     public var displayName: String {
         switch self {
         case .anthropicKey: return "Anthropic key"
         case .openAIKey: return "OpenAI-style key"
+        case .openRouterKey: return "OpenRouter key"
         case .githubToken: return "GitHub token"
         case .awsAccessKey: return "AWS access key"
         case .pemPrivateKey: return "PEM private key"
         case .slackToken: return "Slack token"
+        case .googleAPIKey: return "Google API key"
+        case .stripeKey: return "Stripe live key"
         }
     }
 }
@@ -154,6 +160,21 @@ public enum SecretScanner {
             // OpenAI project (por defecto desde 2024): sk-proj- + cuerpo con guiones
             // y guiones bajos. El genérico sk- no lo cubre (el '-' tras 'proj' lo corta).
             Pattern(kind: .openAIKey, regex: compile("sk-proj-[A-Za-z0-9_-]{20,}")),
+            // OpenRouter: sk-or-v1- + cuerpo hexadecimal. NO lo cubre ninguno de los
+            // otros dos patrones `sk-`: `sk-proj-` no casa por el literal, y el
+            // genérico exige alfanuméricos INMEDIATAMENTE tras `sk-`, así que el
+            // guion de `sk-or-` corta la cuenta en 2 caracteres, muy por debajo del
+            // {20,}. Era el hueco del audit 360 (A1): la app integra OpenRouter y
+            // guarda esa clave en el llavero, y el escáner es un gate que BLOQUEA en
+            // HeadlessFeed y PackWriter, así que sin este patrón la clave acabaría
+            // escrita en el CLAUDE.md de un repo del usuario.
+            Pattern(kind: .openRouterKey, regex: compile("sk-or-v1-[A-Za-z0-9]{20,}")),
+            // Google API key: literal AIza + 35 caracteres. Longitud fija.
+            Pattern(kind: .googleAPIKey, regex: compile("AIza[0-9A-Za-z_-]{35}")),
+            // Stripe: guion BAJO, así que ningún patrón `sk-` lo cubre. Solo `live`:
+            // una clave `test` no es sensible y hacer saltar un gate que bloquea por
+            // ella sería fricción sin ganancia.
+            Pattern(kind: .stripeKey, regex: compile("[sr]k_live_[A-Za-z0-9]{20,}")),
             // OpenAI genérico: sk- + >=20 alfanuméricos. Negar el prefijo sk-ant- por orden
             // (se filtra abajo: un match openAI cuyo texto empieza por "sk-ant-" se descarta).
             Pattern(kind: .openAIKey, regex: compile("sk-[A-Za-z0-9]{20,}")),

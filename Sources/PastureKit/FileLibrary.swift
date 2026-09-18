@@ -18,11 +18,20 @@ public enum FileLibrary {
 
     /// Scans the library root and its first-level subdirectories for `.md` files.
     /// Runs on the global executor — safe to call from the main actor without blocking it.
-    public static func load(at root: URL) async -> LoadResult {
+    ///
+    /// `reusing` permite una carga INCREMENTAL: cada nota cuyo fichero no haya
+    /// cambiado se reaprovecha del resultado anterior en vez de releerse. Sin
+    /// esto, cada ráfaga del watcher —incluidas las que provoca la propia app al
+    /// guardar— releía el vault entero: contenido, estimación de tokens, escaneo
+    /// de plantillas y parseo de frontmatter de cada nota (audit 360, A3).
+    /// Pasar `reusing: []` conserva el comportamiento de relectura completa.
+    public static func load(at root: URL, reusing previous: [MDFile] = []) async -> LoadResult {
+        let index = Dictionary(previous.map { (cacheKey(for: $0.url), $0) },
+                               uniquingKeysWith: { first, _ in first })
         let subdirs = realSubdirectories(in: root)
-        var all = mdFiles(in: root)
+        var all = mdFiles(in: root, reusing: index)
         for subdir in subdirs {
-            all.append(contentsOf: mdFiles(in: subdir))
+            all.append(contentsOf: mdFiles(in: subdir, reusing: index))
         }
         return LoadResult(
             files: all.sorted { $0.modifiedDate > $1.modifiedDate },
@@ -32,9 +41,17 @@ public enum FileLibrary {
 
     /// Non-hidden, non-symlink `.md` files directly inside `directory`.
     public static func mdFiles(in directory: URL) -> [MDFile] {
+        mdFiles(in: directory, reusing: [:])
+    }
+
+    /// Variante con caché. Una entrada sólo se reutiliza si coinciden **fecha de
+    /// modificación y tamaño en bytes**; con uno solo de los dos, un editor que
+    /// preserve la fecha o una edición que no cambie el tamaño devolverían
+    /// contenido obsoleto, que de ahí viajaría a un feed o a un pack.
+    static func mdFiles(in directory: URL, reusing index: [String: MDFile]) -> [MDFile] {
         guard let urls = try? FileManager.default.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isSymbolicLinkKey, .isDirectoryKey],
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isSymbolicLinkKey, .isDirectoryKey],
             options: .skipsHiddenFiles
         ) else { return [] }
         return urls
@@ -43,7 +60,35 @@ public enum FileLibrary {
                 let rv = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
                 return rv?.isSymbolicLink != true
             }
-            .map { MDFile(url: $0) }
+            .map { url in
+                if let cached = index[cacheKey(for: url)], isUnchanged(cached, at: url) { return cached }
+                return MDFile(url: url)
+            }
+    }
+
+    /// Clave normalizada de la caché.
+    ///
+    /// Comparar `URL` directamente NO vale: `contentsOfDirectory` devuelve rutas
+    /// ya resueltas (`/private/var/…`) mientras una URL construida con
+    /// `appendingPathComponent` conserva el symlink (`/var/…`), y las dos son
+    /// distintas como `URL` aunque apunten al mismo fichero. Un fallo de clave
+    /// sólo degrada a relectura completa (nunca sirve contenido obsoleto), pero
+    /// dejaría la carga incremental sin efecto sin que nada lo indicase.
+    static func cacheKey(for url: URL) -> String {
+        url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    /// ¿El fichero en disco sigue siendo el que produjo `cached`?
+    ///
+    /// Se compara el tamaño contra los bytes UTF-8 del contenido cacheado. Un
+    /// fichero que no sea UTF-8 válido guarda `content` vacío, así que nunca
+    /// coincidirá y se releerá: conservador por diseño.
+    static func isUnchanged(_ cached: MDFile, at url: URL) -> Bool {
+        guard let rv = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+              let modified = rv.contentModificationDate,
+              let size = rv.fileSize
+        else { return false }
+        return modified == cached.modifiedDate && size == cached.content.utf8.count
     }
 
     /// Non-hidden, non-symlink subdirectories directly inside `directory`.

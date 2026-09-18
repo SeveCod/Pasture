@@ -144,4 +144,43 @@ import Foundation
         _ = PackWriter.write(request(f, body: "cuerpo estable"))
         #expect(read(f.target) == first)
     }
+
+    // MARK: — A2 (audit 360): destino que existe pero NO es UTF-8
+
+    /// Un destino ilegible como UTF-8 se trataba como inexistente, así que ni
+    /// disparaba el gate de conflicto ni se respaldaba: se perdía sin red. El
+    /// caso no es teórico — un `CLAUDE.md` en Latin-1 con acentos lo reproduce.
+    ///
+    /// La rejilla barre las tres formas en que un destino puede no ser UTF-8, en
+    /// vez de elegir un vector: un test que afirma "ningún destino existente se
+    /// pierde" tiene que cubrir la región entera.
+    @Test("Un destino no-UTF-8 es conflicto y NUNCA se pierde sin backup",
+          arguments: [
+            ("latin1-con-acentos", Data([0x63, 0x61, 0x66, 0xE9])),          // "café" en Latin-1
+            ("binario-con-NUL",    Data([0x00, 0x01, 0x02, 0xFF, 0xFE])),
+            ("utf8-truncado",      Data([0x68, 0x6F, 0x6C, 0x61, 0xC3])),    // 'Ã' a medias
+          ])
+    func nonUTF8TargetIsConflictAndBackedUp(caso: String, bytes: Data) throws {
+        let f = try makeFixture()
+        try bytes.write(to: f.target)
+
+        // 1) Sin confirmación explícita, no se toca.
+        #expect(PackWriter.write(request(f, body: "nuevo")) == .conflict,
+                "\(caso): un destino ilegible es trabajo ajeno, no un destino ausente")
+        #expect(try Data(contentsOf: f.target) == bytes,
+                "\(caso): el destino se modificó pese a devolver .conflict")
+
+        // 2) Con confirmación, se sobrescribe PERO queda respaldado byte a byte.
+        let outcome = PackWriter.write(request(f, body: "nuevo", overwrite: true))
+        guard case .written = outcome else {
+            Issue.record("\(caso): esperaba .written con overwrite"); return
+        }
+        let subdir = PackWriter.backupSubdir(for: f.target, backupsRoot: f.backups)
+        let backups = try FileManager.default
+            .contentsOfDirectory(at: subdir, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "bak" }
+        #expect(backups.count == 1, "\(caso): se sobrescribió sin dejar backup")
+        #expect(try Data(contentsOf: try #require(backups.first)) == bytes,
+                "\(caso): el backup no reproduce los bytes originales")
+    }
 }

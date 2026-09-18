@@ -9,7 +9,6 @@ struct ContentView: View {
     @EnvironmentObject private var fm: MDFileManager
     @State private var selectedFiles: Set<MDFile> = []
     @State private var activeFile: MDFile?
-    @State private var showNewFileSheet = false
     @State private var showPasteSheet = false
     @State private var pasteboardText: String?
     @State private var showMergeSheet = false
@@ -50,9 +49,6 @@ struct ContentView: View {
             editorPanel
         }
         .toolbar { toolbarContent }
-        .onReceive(NotificationCenter.default.publisher(for: .newFile)) { _ in
-            showNewFileSheet = true
-        }
         .onReceive(NotificationCenter.default.publisher(for: .pasteFromClipboard)) { _ in
             startPasteFlow()
         }
@@ -89,17 +85,6 @@ struct ContentView: View {
             }
         }
         .modifier(presetSheetsAndAlerts)
-        .sheet(isPresented: $showNewFileSheet) {
-            NameInputSheet(title: "New file", actionLabel: "Create") { name in
-                // Nace en la colección activa, igual que una nota pegada.
-                // Los fallos de `create` llegan al usuario por `fm.lastError`.
-                if let created = fm.create(name: name, content: "", collection: activeFile?.collection) {
-                    selectFile(created)
-                    // `created.name` y no `name`: la deduplicación puede haberlo cambiado.
-                    feedService.showFeedback("Created '\(created.name).md'")
-                }
-            }
-        }
         .sheet(isPresented: $showPasteSheet) {
             NameInputSheet(title: "New file from clipboard", actionLabel: "Create") { name in
                 // El contenido se capturó en startPasteFlow(), en el gesto del
@@ -142,16 +127,28 @@ struct ContentView: View {
                 fm.lastError = nil
             }
         }
-        .onChange(of: searchText) { _, newValue in
-            if newValue.isEmpty { fm.searchQuery = newValue }
-        }
         .onChange(of: fm.files) { _, newFiles in
             reconcileSelection(with: newFiles)
         }
-        .onReceive(Just(searchText).debounce(for: .milliseconds(300), scheduler: RunLoop.main)) { value in
-            if !value.isEmpty { fm.searchQuery = value }
+        // El debounce lo hace `.task(id:)`: al cambiar `searchText` SwiftUI cancela la
+        // tarea anterior, que es exactamente la semántica que se busca.
+        // NO usar `Just(searchText).debounce(…)`: Combine descarta el valor pendiente
+        // cuando el upstream completa, y `Just` completa de inmediato, así que el sink
+        // no se invoca NUNCA y la búsqueda deja de filtrar (regresión real, v1.11).
+        .task(id: searchText) {
+            // Vaciar es inmediato: al borrar la consulta se ve la lista entera ya.
+            guard !searchText.isEmpty else {
+                fm.searchQuery = ""
+                return
+            }
+            try? await Task.sleep(nanoseconds: Self.searchDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            fm.searchQuery = searchText
         }
     }
+
+    /// Espera entre la última pulsación y el filtrado real.
+    static let searchDebounceNanoseconds: UInt64 = 300_000_000
 
     // MARK: — Editor
 
@@ -180,12 +177,6 @@ struct ContentView: View {
         ToolbarItemGroup(placement: .primaryAction) {
             let targets = feedTargets
 
-            Button { showNewFileSheet = true } label: {
-                Label("New File", systemImage: "doc.badge.plus")
-            }
-            .help("Create a new empty note")
-            .accessibilityLabel("New file")
-
             Button { showNewCollectionSheet = true } label: {
                 Label("New Collection", systemImage: "folder.badge.plus")
             }
@@ -200,7 +191,7 @@ struct ContentView: View {
             .accessibilityHint("Creates a new Markdown file from clipboard content")
 
             Button { importFromDisk() } label: {
-                Label("Import", systemImage: "doc.badge.plus")
+                Label("Import", systemImage: "square.and.arrow.down")
             }
             .help("Import files (PDF, CSV, DOCX)")
             .accessibilityLabel("Import files")
@@ -341,21 +332,24 @@ struct ContentView: View {
     /// "user originated and paste related" y, si aun así no hay texto, se avisa
     /// en vez de crear un archivo en blanco.
     private func startPasteFlow() {
-        let text = NSPasteboard.general.string(forType: .string)
-        guard let text, !text.isEmpty else {
-            feedService.showFeedback(Self.emptyClipboardMessage(), isError: true)
-            return
+        // La regla de decisión vive en `ClipboardPaste` (PastureKit) para que se
+        // pueda testear: aquí sólo queda la lectura del sistema, que es lo único
+        // que obliga a estar en la vista.
+        switch ClipboardPaste.outcome(clipboardText: NSPasteboard.general.string(forType: .string),
+                                      accessDenied: Self.clipboardAccessDenied()) {
+        case .refuse(let message):
+            feedService.showFeedback(message, isError: true)
+        case .proceed(let text):
+            pasteboardText = text
+            showPasteSheet = true
         }
-        pasteboardText = text
-        showPasteSheet = true
     }
 
-    private static func emptyClipboardMessage() -> String {
-        if #available(macOS 15.4, *),
-           NSPasteboard.general.accessBehavior == .alwaysDeny {
-            return "macOS is blocking clipboard access — allow Pasture in System Settings → Privacy & Security → Paste from Other Apps"
+    private static func clipboardAccessDenied() -> Bool {
+        if #available(macOS 15.4, *) {
+            return NSPasteboard.general.accessBehavior == .alwaysDeny
         }
-        return "Clipboard has no text to paste"
+        return false
     }
 
     /// Datos del alert de borrado: nil cuando no hay nada pendiente.

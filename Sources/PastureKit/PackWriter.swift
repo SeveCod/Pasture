@@ -63,8 +63,26 @@ public enum PackWriter {
     }
 
     public static func write(_ request: WriteRequest) -> WriteOutcome {
-        let existing = try? String(contentsOf: request.targetURL, encoding: .utf8)
-        let state = SyncMarker.state(existingFileContent: existing)
+        // Se lee en CRUDO para poder distinguir tres casos que antes colapsaban en
+        // uno solo: destino ausente, destino de texto, y destino que existe pero no
+        // es UTF-8 válido (binario, Latin-1 con acentos, un byte corrupto).
+        //
+        // Audit 360 (A2): con `try? String(contentsOf:encoding:.utf8)` el tercer caso
+        // daba `nil`, `SyncMarker.state(nil)` lo leía como `.targetMissing`, y
+        // entonces el gate de conflicto NO disparaba y el `if let existing` NO hacía
+        // backup: las tres defensas declaradas en el docstring de este fichero
+        // fallaban a la vez y el destino se perdía sin red.
+        let existingData = try? Data(contentsOf: request.targetURL)
+        let existingText = existingData.flatMap { String(data: $0, encoding: .utf8) }
+
+        let state: SyncMarker.SyncState
+        if existingData != nil, existingText == nil {
+            // Existe y no se puede leer como texto ⇒ no lo escribió Pasture (que
+            // siempre escribe UTF-8) ⇒ es trabajo ajeno ⇒ conflicto.
+            state = .conflict
+        } else {
+            state = SyncMarker.state(existingFileContent: existingText)
+        }
 
         // AC#2: conflicto sin confirmación explícita → no se toca el destino.
         if state == .conflict && !request.overwriteConflict {
@@ -75,10 +93,12 @@ public enum PackWriter {
             return .secretsBlocked
         }
 
-        // AC#3: backup del contenido anterior antes de sobrescribir.
-        if let existing {
+        // AC#3: backup del contenido anterior antes de sobrescribir. Se respaldan
+        // los BYTES, no el texto: un destino que no es UTF-8 también merece red, y
+        // reconstruirlo desde un String lo habría corrompido.
+        if let existingData {
             do {
-                try backup(content: existing, targetURL: request.targetURL, backupsRoot: request.backupsRoot)
+                try backup(data: existingData, targetURL: request.targetURL, backupsRoot: request.backupsRoot)
             } catch {
                 return .failed("backup falló: \(error.localizedDescription)")
             }
@@ -103,13 +123,15 @@ public enum PackWriter {
         return backupsRoot.appendingPathComponent(key, isDirectory: true)
     }
 
-    static func backup(content: String, targetURL: URL, backupsRoot: URL) throws {
+    /// Respalda los bytes tal cual: el destino puede no ser UTF-8 y un round-trip
+    /// por `String` lo corrompería.
+    static func backup(data: Data, targetURL: URL, backupsRoot: URL) throws {
         let subdir = backupSubdir(for: targetURL, backupsRoot: backupsRoot)
         try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
         // Nombre ordenable por tiempo (epoch ms) + sufijo único para no colisionar.
         let stamp = Int(Date().timeIntervalSince1970 * 1000)
         let name = "\(stamp)-\(UUID().uuidString.prefix(8)).bak"
-        try Data(content.utf8).write(to: subdir.appendingPathComponent(name))
+        try data.write(to: subdir.appendingPathComponent(name))
         prune(subdir: subdir)
     }
 

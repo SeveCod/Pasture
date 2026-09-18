@@ -17,13 +17,15 @@ struct SidebarView: View {
     @State private var collectionPendingRename: String?
     @State private var showReviewQueue = false
     @State private var showInbox = false
+    /// Colecciones desplegadas, por `CollectionNode.id`. Se siembra del store en
+    /// el inicializador del `@State` y se reescribe en cada plegado (salvo durante una búsqueda).
+    @State private var expandedCollections: Set<String> = CollectionExpansionStore.load()
 
     var body: some View {
         VStack(spacing: 0) {
             searchBar
             Color.pastureDivider(colorScheme).frame(height: 1)
-            inboxBanner
-            reviewBanner
+            statusStrip
             fileList
             Color.pastureDivider(colorScheme).frame(height: 1)
             selectionSummary
@@ -63,62 +65,55 @@ struct SidebarView: View {
         }
     }
 
-    /// v1.8: badge de la bandeja de propuestas — visible solo si hay pendientes.
+    /// Franja de avisos: propuestas pendientes (v1.8) y notas caducadas (v1.7).
+    /// Una sola fila con hasta dos avisos, en vez de dos filas apiladas.
     @ViewBuilder
-    private var inboxBanner: some View {
-        let count = fm.pendingProposals.count
-        if count > 0 {
-            Button {
-                showInbox = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "tray.and.arrow.down")
-                        .foregroundStyle(Color.pastureAccent(colorScheme))
-                    Text("Inbox (\(count))")
-                        .font(.pastureStatusBar)
-                        .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+    private var statusStrip: some View {
+        let proposals = fm.pendingProposals.count
+        let stale = fm.staleFiles().count
+        if proposals > 0 || stale > 0 {
+            HStack(spacing: 12) {
+                if proposals > 0 {
+                    Button { showInbox = true } label: {
+                        statusChip(
+                            icon: "tray.and.arrow.down",
+                            tint: Color.pastureAccent(colorScheme),
+                            text: "Inbox (\(proposals))"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Agent proposals waiting for your review")
+                    .accessibilityLabel("Review inbox, \(proposals) proposals pending")
                 }
-                .padding(.horizontal, PastureLayout.searchBarHPadding)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
+                if stale > 0 {
+                    Button { showReviewQueue = true } label: {
+                        statusChip(
+                            icon: "clock.badge.exclamationmark",
+                            tint: Color.pastureWarning(colorScheme),
+                            text: "\(stale) note\(stale == 1 ? "" : "s") to review"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Notes past their review date")
+                    .accessibilityLabel("Review queue, \(stale) notes need review")
+                }
+                Spacer()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Review inbox, \(count) proposals pending")
+            .padding(.horizontal, PastureLayout.searchBarHPadding)
             Color.pastureDivider(colorScheme).frame(height: 1)
         }
     }
 
-    /// v1.7: banner de la cola de revisión — visible solo si hay notas caducadas.
-    @ViewBuilder
-    private var reviewBanner: some View {
-        let stale = fm.staleFiles()
-        if !stale.isEmpty {
-            Button {
-                showReviewQueue = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock.badge.exclamationmark")
-                        .foregroundStyle(Color.pastureWarning(colorScheme))
-                    Text("\(stale.count) note\(stale.count == 1 ? "" : "s") need review")
-                        .font(.pastureStatusBar)
-                        .foregroundStyle(Color.pastureTextSecondary(colorScheme))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-                }
-                .padding(.horizontal, PastureLayout.searchBarHPadding)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Review queue, \(stale.count) notes need review")
-            Color.pastureDivider(colorScheme).frame(height: 1)
+    private func statusChip(icon: String, tint: Color, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+            Text(text)
+                .font(.pastureStatusBar)
+                .foregroundStyle(Color.pastureTextSecondary(colorScheme))
         }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 
     private func renameFile(_ file: MDFile, to newName: String) {
@@ -192,39 +187,48 @@ struct SidebarView: View {
         }
     }
 
-    var fileList: some View {
-        let sorted = sortedFiles
-        let grouped = Dictionary(grouping: sorted, by: \.collection)
-        let uncategorized = grouped[nil] ?? []
-        let visibleCollns = fm.searchQuery.isEmpty
-            ? fm.collections
-            : fm.collections.filter { grouped[$0] != nil }
-        return List(selection: $selectedFiles) {
-            if !uncategorized.isEmpty {
-                Section {
-                    ForEach(uncategorized) { file in
-                        fileRow(file: file)
-                    }
-                } header: {
-                    Text("Uncategorized")
-                        .font(.pastureSummary)
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-                }
-            }
+    private var isSearching: Bool { !fm.searchQuery.isEmpty }
 
-            ForEach(visibleCollns, id: \.self) { collectionName in
-                let collectionFiles = grouped[collectionName] ?? []
-                Section {
-                    ForEach(collectionFiles) { file in
+    /// Nodos que se pintan ahora. Con búsqueda activa se ocultan las colecciones
+    /// sin coincidencias: un triángulo que no lleva a nada solo hace ruido.
+    private var nodes: [CollectionNode] {
+        SidebarTree.build(
+            files: sortedFiles,
+            collections: fm.collections,
+            base: MDFileManager.pastureDir,
+            hidingEmpty: isSearching
+        )
+    }
+
+    /// El pliegue de un nodo. Durante una búsqueda se ve abierto y el `set` no
+    /// escribe, así que al borrar la búsqueda vuelve el estado guardado.
+    private func expansionBinding(for node: CollectionNode) -> Binding<Bool> {
+        Binding(
+            get: {
+                CollectionExpansionStore.effectiveExpansion(
+                    stored: expandedCollections, nodeID: node.id, isSearching: isSearching
+                )
+            },
+            set: { newValue in
+                let next = CollectionExpansionStore.applying(
+                    newValue, to: expandedCollections, nodeID: node.id, isSearching: isSearching
+                )
+                guard next != expandedCollections else { return }
+                expandedCollections = next
+                CollectionExpansionStore.save(next)
+            }
+        )
+    }
+
+    var fileList: some View {
+        List(selection: $selectedFiles) {
+            ForEach(nodes) { node in
+                DisclosureGroup(isExpanded: expansionBinding(for: node)) {
+                    ForEach(node.files) { file in
                         fileRow(file: file)
                     }
-                } header: {
-                    Text(collectionName)
-                        .font(.pastureSummary)
-                        .foregroundStyle(Color.pastureTextTertiary(colorScheme))
-                        .contextMenu {
-                            collectionHeaderContextMenu(collectionName: collectionName, isEmpty: collectionFiles.isEmpty)
-                        }
+                } label: {
+                    collectionHeader(node)
                 }
             }
         }
@@ -239,8 +243,60 @@ struct SidebarView: View {
         .onChange(of: selectedFiles) { _, newVal in
             if newVal.count == 1 { activeFile = newVal.first }
         }
+        .onChange(of: activeFile) { _, newVal in
+            expandCollection(of: newVal)
+        }
         .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in
             onDrop(providers)
+        }
+    }
+
+    /// Despliega la colección del fichero activo si estaba plegada, para que una
+    /// nota nueva (Paste/Import/Merge/preset) no quede seleccionada pero invisible
+    /// con todo plegado por defecto. No escribe si ya estaba desplegada, y una
+    /// búsqueda activa ya la ve abierta sin tocar el estado guardado.
+    private func expandCollection(of file: MDFile?) {
+        guard let file, !isSearching else { return }
+        // Fuente única de la clave: recomponerla aquí a mano dejaba dos copias de
+        // la misma regla, y esta no la vigilaba ningún test (audit 360).
+        let id = CollectionNode.id(forCollection: file.collection)
+        guard !expandedCollections.contains(id) else { return }
+        expandedCollections.insert(id)
+        CollectionExpansionStore.save(expandedCollections)
+    }
+
+    /// Cabecera del nodo: nombre, número de notas y tokens. Conserva el menú
+    /// contextual de la colección (renombrar / borrar si está vacía).
+    @ViewBuilder
+    private func collectionHeader(_ node: CollectionNode) -> some View {
+        let header = HStack(spacing: 6) {
+            Text(node.name ?? "Uncategorized")
+                .font(.pastureSummary)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+                .lineLimit(1)
+            Spacer()
+            Text("\(node.fileCount)")
+                .font(.pastureSummary)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+            Text("~\(TokenEstimator.formatted(node.totalTokens))")
+                .font(.pastureSummary)
+                .foregroundStyle(Color.pastureTextTertiary(colorScheme))
+        }
+        .contentShape(Rectangle())
+        .help("\(node.fileCount) note\(node.fileCount == 1 ? "" : "s"), ~\(TokenEstimator.formatted(node.totalTokens)) tokens")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(node.name ?? "Uncategorized"), \(node.fileCount) note\(node.fileCount == 1 ? "" : "s"), approximately \(TokenEstimator.formatted(node.totalTokens)) tokens")
+
+        // El `.contextMenu` se aplica solo si hay nombre: envolver únicamente su
+        // contenido en el `if let` deja el modificador presente sobre
+        // Uncategorized con un menú vacío, que algunas versiones de macOS abren
+        // igualmente en blanco.
+        if let name = node.name {
+            header.contextMenu {
+                collectionHeaderContextMenu(collectionName: name, isEmpty: node.files.isEmpty)
+            }
+        } else {
+            header
         }
     }
 
